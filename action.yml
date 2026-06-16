@@ -2,6 +2,15 @@ name: Patchly
 description: Autonomous software engineering agent that lives inside repositories
 author: Llucs
 
+# IMPORTANT: Your workflow MUST include these permissions for Patchly to work:
+#
+# permissions:
+#   contents: write    # needed for fix mode (creating branches/commits)
+#   pull-requests: write  # needed for review mode (PR comments)
+#   issues: write      # needed for scan mode (creating issues)
+#
+# Without the correct permissions, some features will fail with a clear 403 error.
+
 inputs:
   mode:
     description: Operation mode (review, scan, command)

@@ -159,6 +159,19 @@ Set `api_base` to point to any OpenAI-compatible endpoint. Works with OpenCode, 
 - Python 3.11+
 - `httpx` library
 
+## Required permissions
+
+Your workflow must include the following permissions for Patchly features:
+
+```yaml
+permissions:
+  contents: write       # fix mode (branches, commits)
+  pull-requests: write  # review & command mode (comments)
+  issues: write         # scan mode (creating issues)
+```
+
+Without the correct permissions, Patchly will log a clear error instead of crashing.
+
 ## License
 
 Apache 2.0

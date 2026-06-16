@@ -42,4 +42,4 @@ class PerformanceAnalyzer(BaseAnalyzer):
             return []
 
         result = self._llm_analysis(SYSTEM, "\n\n".join(content_batches))
-        return [ActionResult("performance", "info", result)]
+        return self._parse_findings(result, "performance")

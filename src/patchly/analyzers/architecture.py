@@ -40,4 +40,4 @@ class ArchitectureAnalyzer(BaseAnalyzer):
             SYSTEM,
             f"Repository structure ({len(structure)} files):\n" + "\n".join(structure),
         )
-        return [ActionResult("architecture", "info", result)]
+        return self._parse_findings(result, "architecture")

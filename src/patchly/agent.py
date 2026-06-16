@@ -65,14 +65,18 @@ class Agent:
             if r.severity in ("error", "warning"):
                 self._record_to_memory(r)
 
-        has_issues = any(r.severity == "error" for r in results)
-        if not has_issues:
-            llm_log("No issues found.")
+        errors = [r for r in results if r.severity == "error"]
+        warnings = [r for r in results if r.severity == "warning"]
+
+        if errors:
+            llm_log(f"Found {len(errors)} error(s), {len(warnings)} warning(s).")
+        elif warnings:
+            llm_log(f"No errors, but {len(warnings)} warning(s) found.")
         else:
-            llm_log(f"Found {sum(1 for r in results if r.severity == 'error')} error(s).")
+            llm_log("No issues found.")
 
         divider()
-        return 1 if has_issues else 0
+        return 1 if errors else 0
 
     def _load_web_context(self) -> str:
         event = self.context.get("event", {})
@@ -189,8 +193,11 @@ class Agent:
         llm_log(f"Risk score: {risk_score} ({classify(risk_score)})")
 
         if self.config.comment_on_pr:
-            create_comment(pr_number, analysis)
-            llm_log("Review comment posted")
+            try:
+                create_comment(pr_number, analysis)
+                llm_log("Review comment posted")
+            except PermissionError:
+                llm_log("Cannot post comment — missing `pull-requests: write` permission")
 
         return [ActionResult("review", classify(risk_score) if risk_score > 1 else "info", analysis)]
 
@@ -217,19 +224,31 @@ class Agent:
 
         results = run_analyzers(selected, self.config)
 
-        if results and self.config.outputs.issues:
+        errors = [r for r in results if r.severity == "error"]
+        warnings = [r for r in results if r.severity == "warning"]
+        infos = [r for r in results if r.severity == "info"]
+
+        llm_log(f"Scan complete: {len(errors)} error(s), {len(warnings)} warning(s), {len(infos)} info(s)")
+
+        actionable = errors + warnings
+        if actionable and self.config.outputs.issues:
             from patchly.github_client import create_issue
 
-            for r in results:
-                if r.severity in ("error", "warning"):
-                    risk_score = score_issue(r)
-                    level = classify(risk_score)
-                    llm_log(f"Issue: {r.title} (risk: {level})")
+            for r in actionable:
+                risk_score = score_issue(r)
+                level = classify(risk_score)
+                llm_log(f"Issue: {r.title[:80]} (risk: {level})")
+                try:
                     create_issue(
                         f"Patchly: {r.title}",
                         f"{r.description}\n\n**Risk:** {level}\n\n```\n{r.detail[:5000]}\n```",
                         [f"{self.config.label_prefix}", r.severity, level],
                     )
+                    llm_log(f"  ✓ Issue created")
+                except PermissionError:
+                    llm_log(f"  ✗ Cannot create issue — need `issues: write` permission")
+                except Exception as e:
+                    llm_log(f"  ✗ Failed to create issue: {e}")
 
         return results
 
@@ -426,8 +445,11 @@ class Agent:
             from patchly.github_client import create_comment
             issue_number = (event.get("issue") or {}).get("number")
             if issue_number:
-                create_comment(issue_number, result)
-                llm_log(f"Response posted to issue #{issue_number}")
+                try:
+                    create_comment(issue_number, result)
+                    llm_log(f"Response posted to issue #{issue_number}")
+                except PermissionError:
+                    llm_log("Cannot post comment — missing `pull-requests: write` permission")
 
         return [ActionResult("command", "info", result)]
 

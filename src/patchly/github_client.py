@@ -26,6 +26,16 @@ def _github_api(
 ) -> Any:
     url = f"{API}{path}"
     resp = httpx.request(method, url, headers=HEADERS, json=data, timeout=30)
+    if resp.status_code == 403:
+        raise PermissionError(
+            f"GitHub API 403 on {method} {path}. "
+            "Check that your GITHUB_TOKEN has the required permissions. "
+            "Add `permissions:` to your workflow:\n\n"
+            "permissions:\n"
+            "  contents: write\n"
+            "  pull-requests: write\n"
+            "  issues: write\n"
+        )
     resp.raise_for_status()
     if resp.text:
         return resp.json()

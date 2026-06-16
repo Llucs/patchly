@@ -41,4 +41,4 @@ class ModernizationAnalyzer(BaseAnalyzer):
             return []
 
         result = self._llm_analysis(SYSTEM, "\n\n".join(content_batches))
-        return [ActionResult("modernization", "info", result)]
+        return self._parse_findings(result, "modernization")
