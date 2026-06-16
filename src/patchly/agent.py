@@ -56,6 +56,8 @@ class Agent:
             results = self._run_continuous(memory_context)
         elif mode == "command":
             results = self._run_command(web_content, memory_context)
+        elif mode == "resolve":
+            results = self._run_resolve(memory_context)
         else:
             llm_log(f"Unknown mode: {mode}")
             return 1
@@ -325,6 +327,165 @@ class Agent:
 
         llm_log("  Max verification cycles reached without passing")
         return ActionResult("fix", "warning", f"Could not verify fix for {issue.title} after {VERIFICATION_MAX_CYCLES} attempts")
+
+    def _run_resolve(self, memory_context: str) -> list[ActionResult]:
+        llm_log("Resolve mode: fetching open issues...")
+
+        from patchly.github_client import (
+            add_labels,
+            create_comment,
+            list_issues,
+            update_issue,
+        )
+        from patchly.modes.fix import _generate_fix, _apply_fix_as_pr
+        from patchly.risk import classify, score_issue
+
+        issues = list_issues(label=self.config.label_prefix, state="open")
+        if not issues:
+            llm_log("No open issues to resolve")
+            return []
+
+        llm_log(f"Found {len(issues)} open issue(s)")
+        results = []
+
+        for issue in issues:
+            number = issue["number"]
+            title = issue["title"]
+            body = issue.get("body", "")
+            labels = [l["name"] for l in issue.get("labels", [])]
+
+            if "resolving" in labels or "resolved" in labels:
+                llm_log(f"  #{number} — already being processed, skipping")
+                continue
+
+            llm_log(f"  #{number}: {title[:80]}")
+
+            try:
+                add_labels(number, ["resolving"])
+            except PermissionError:
+                llm_log(f"  Cannot add label to #{number}")
+
+            analysis = self._analyze_issue(number, title, body, memory_context)
+            if analysis.get("action") == "fix":
+                result = self._fix_and_comment(
+                    number, title, body, analysis, memory_context,
+                )
+                results.append(result)
+            elif analysis.get("action") == "close":
+                comment = analysis.get("comment", "This issue appears to be resolved.")
+                try:
+                    create_comment(number, comment)
+                    update_issue(number, {"state": "closed"})
+                    llm_log(f"  #{number} — closed as resolved")
+                except PermissionError:
+                    llm_log(f"  Cannot close #{number}")
+                results.append(ActionResult("resolve", "info", f"Closed #{number}: {comment[:200]}"))
+            else:
+                llm_log(f"  #{number} — skipped (action={analysis.get('action')})")
+
+        llm_log(f"Resolve complete: {len(results)} issue(s) processed")
+        return results
+
+    def _analyze_issue(
+        self, number: int, title: str, body: str, memory_context: str,
+    ) -> dict:
+        from patchly.llm import chat
+
+        files = list_project_files()
+        file_list = "\n".join(
+            str(f.relative_to(WORKSPACE))
+            for f in files
+            if f.suffix in {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".rb", ".php", ".c", ".cpp", ".cs"}
+            and f.stat().st_size > 0
+        )[:8000]
+
+        prompt = (
+            f"Issue #{number}: {title}\n\n"
+            f"Description:\n{body[:4000]}\n\n"
+            f"Current project files:\n{file_list}\n\n"
+            "Analyze this issue and respond with a JSON object:\n"
+            '{"action": "fix"|"close"|"skip", "files": ["path1", "path2"], "description": "...", "comment": "..."}\n'
+            "- fix: issue still exists and should be fixed\n"
+            "- close: issue is already resolved or no longer relevant\n"
+            "- skip: unsure or needs human review\n"
+            '"files": list of files likely involved (for "fix" action)\n'
+            '"description": short technical description of the problem\n'
+            '"comment": what to post on the issue\n'
+            "Respond with ONLY valid JSON, no markdown."
+        )
+
+        system = self._build_system_prompt(memory_context)
+        result = chat([{"role": "user", "content": prompt}], self.config, system=system)
+
+        import json as _json
+        try:
+            return _json.loads(result)
+        except (_json.JSONDecodeError, Exception):
+            llm_log(f"  Could not parse LLM response for #{number}")
+            return {"action": "skip", "comment": "Could not analyze this issue automatically."}
+
+    def _fix_and_comment(
+        self,
+        number: int,
+        title: str,
+        body: str,
+        analysis: dict,
+        memory_context: str,
+    ) -> ActionResult:
+        from patchly.github_client import create_comment
+        from patchly.modes.fix import _generate_fix, _apply_fix_as_pr
+
+        files = analysis.get("files", [])
+        if not files:
+            llm_log(f"  #{number} — no files identified for fix")
+            return ActionResult("resolve", "warning", f"Cannot fix #{number}: no files identified")
+
+        issue_result = ActionResult(
+            "resolve",
+            "error",
+            analysis.get("description", title),
+            files=files,
+        )
+        risk_score = score_issue(issue_result)
+        level = classify(risk_score)
+
+        if level == "high":
+            comment = f"**Analysis:** This issue touches high-risk areas and needs human review.\n\n{analysis.get('comment', '')}"
+            try:
+                create_comment(number, comment)
+            except PermissionError:
+                pass
+            return ActionResult("resolve", "warning", f"#{number} requires human review")
+
+        fix = _generate_fix(issue_result, self.config)
+        if fix is None:
+            comment = f"**Analysis:** I looked into this, but could not generate an automatic fix.\n\n{analysis.get('comment', '')}"
+            try:
+                create_comment(number, comment)
+            except PermissionError:
+                pass
+            return ActionResult("resolve", "info", f"#{number}: fix not generated")
+
+        pr_url = _apply_fix_as_pr(issue_result, fix, self.config)
+        if pr_url:
+            comment = (
+                f"**Fix PR created:** {pr_url}\n\n"
+                f"**Analysis:** {analysis.get('description', title)}\n\n"
+                f"_This PR was automatically generated by Patchly._"
+            )
+            try:
+                create_comment(number, comment)
+            except PermissionError:
+                pass
+            llm_log(f"  #{number} — fix PR: {pr_url}")
+            return ActionResult("resolve", "info", f"#{number}: fix PR {pr_url}")
+
+        comment = f"**Analysis:** Issue identified but could not create a PR automatically.\n\n{analysis.get('comment', '')}"
+        try:
+            create_comment(number, comment)
+        except PermissionError:
+            pass
+        return ActionResult("resolve", "warning", f"#{number}: could not create PR")
 
     def _run_continuous(self, memory_context: str) -> list[ActionResult]:
         llm_log("Continuous mode: incremental maintenance...")

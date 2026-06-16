@@ -13,7 +13,7 @@ author: Llucs
 
 inputs:
   mode:
-    description: Operation mode (review, scan, command)
+    description: Operation mode (review, scan, resolve, command)
     required: false
     default: review
   provider:

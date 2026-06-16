@@ -190,6 +190,17 @@ def load_config(from_file: str | None = None) -> PatchlyConfig:
                 setattr(cfg.ollama, attr, val)
 
     _CONFIG_CACHE = cfg
+
+    # Sync top-level auto_* flags with OutputsConfig sub-object when env var is set.
+    # This ensures env var PATCHLY_AUTO_CREATE_ISSUES actually controls issue creation,
+    # without overriding a config file's outputs.issues when the env var is absent.
+    _auto_issues_env = os.environ.get("PATCHLY_AUTO_CREATE_ISSUES")
+    if _auto_issues_env is not None:
+        cfg.outputs.issues = _auto_issues_env.lower() in ("1", "true", "yes")
+    _auto_fix_env = os.environ.get("PATCHLY_AUTO_CREATE_FIX_PRS")
+    if _auto_fix_env is not None:
+        cfg.outputs.patch_prs = _auto_fix_env.lower() in ("1", "true", "yes")
+
     return cfg
 
 

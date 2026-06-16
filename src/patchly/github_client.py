@@ -96,6 +96,37 @@ def create_issue(title: str, body: str, labels: list[str] | None = None) -> dict
     )
 
 
+def list_issues(label: str = "patchly", state: str = "open") -> list[dict[str, Any]]:
+    issues = []
+    page = 1
+    while True:
+        batch = _github_api(
+            "GET",
+            f"/repos/{GITHUB_REPOSITORY}/issues?labels={label}&state={state}&per_page=100&page={page}",
+        )
+        if not batch:
+            break
+        issues.extend(batch)
+        page += 1
+    return issues
+
+
+def add_labels(issue_number: int, labels: list[str]) -> dict[str, Any]:
+    return _github_api(
+        "POST",
+        f"/repos/{GITHUB_REPOSITORY}/issues/{issue_number}/labels",
+        {"labels": labels},
+    )
+
+
+def update_issue(issue_number: int, data: dict[str, Any]) -> dict[str, Any]:
+    return _github_api(
+        "PATCH",
+        f"/repos/{GITHUB_REPOSITORY}/issues/{issue_number}",
+        data,
+    )
+
+
 def create_pr(title: str, body: str, head: str, base: str = "main") -> dict[str, Any]:
     return _github_api(
         "POST",

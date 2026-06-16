@@ -4,10 +4,10 @@ Any agent (human or autonomous) working on Patchly MUST follow this contract.
 
 ## CRITICAL RULES
 
-1. **ALWAYS update the version** in ALL THREE places when making changes:
-   - `VERSION` file (single source of truth)
-   - `src/patchly/__init__.py` (reads from VERSION file)
-   - `pyproject.toml` (used for pip packaging)
+1. **ALWAYS update the version** when making changes — only the `VERSION` file needs changing:
+   - `VERSION` file is the single source of truth
+   - `src/patchly/__init__.py` reads from VERSION at runtime (falls back to importlib.metadata)
+   - `pyproject.toml` reads from VERSION at build time via `[tool.setuptools.dynamic]`
    Follow semver:
    - MAJOR: breaking changes
    - MINOR: new features (this is the most common)
@@ -55,7 +55,7 @@ Event → Context Builder → Web Sanitizer → Memory Injection
 | `src/patchly/safe_mode.py` | Concrete safe mode rules |
 | `src/patchly/analyzers/` | Analysis modules |
 | `src/patchly/actions/` | Action modules (ActionResult, PR creation) |
-| `src/patchly/modes/` | Mode entry points (review, scan, fix, continuous, command) |
+| `src/patchly/modes/` | Mode entry points (review, scan, fix, continuous, command, resolve) |
 | `src/patchly/utils/` | Utility modules (patterns, validation) |
 
 ## Provider architecture
@@ -78,6 +78,7 @@ Event → Context Builder → Web Sanitizer → Memory Injection
 | `fix` | Auto-generate patches, verify, create PRs |
 | `continuous` | Incremental maintenance over time |
 | `command` | Respond to `/patchly <cmd>` in issues/comments |
+| `resolve` | Process open issues — analyze, fix, and comment |
 
 ## Security rules
 

@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "patchly"
-version = "1.3.0"
+dynamic = ["version", "classifiers"]
 description = "Autonomous software engineering agent that lives inside repositories"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -12,3 +12,6 @@ requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27,<1",
 ]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
