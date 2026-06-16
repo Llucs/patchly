@@ -1,0 +1,28 @@
+{
+  "provider": "api",
+  "model": "deepseek-v4-flash-free",
+  "api_base": "https://opencode.ai/zen/v1",
+  "auto_mode": "suggest",
+  "comment_on_pr": true,
+  "auto_create_issues": true,
+  "auto_create_fix_prs": false,
+  "max_files_per_run": 30,
+  "max_context_tokens": 32000,
+  "label_prefix": "patchly",
+  "analyzers": {
+    "code_quality": { "enabled": true },
+    "architecture": { "enabled": true },
+    "performance": { "enabled": true },
+    "modernization": { "enabled": true },
+    "security": { "enabled": true }
+  },
+  "ollama": {
+    "model": "qwen3-coder:30b",
+    "context_length": 32000,
+    "flash_attention": true,
+    "kv_cache_type": "q8_0",
+    "num_thread": 4,
+    "keep_alive": 300,
+    "base_url": "http://localhost:11434"
+  }
+}

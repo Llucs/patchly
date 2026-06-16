@@ -1,0 +1,21 @@
+name: Patchly Scheduled Scan
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: LLM provider (api or ollama)
+        required: false
+        default: api
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: Llucs/patchly@main
+        with:
+          mode: scan
+          provider: ${{ github.event.inputs.provider || 'api' }}
+          auto_create_issues: "true"

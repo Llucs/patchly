@@ -1,0 +1,34 @@
+name: Patchly Self Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install httpx pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+      - name: Self-scan
+        run: python -m patchly --mode=scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: push
+          GITHUB_EVENT_PATH: /dev/null
+          GITHUB_SHA: ${{ github.sha }}
+          PATCHLY_AUTO_CREATE_ISSUES: "false"

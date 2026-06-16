@@ -1,0 +1,97 @@
+name: Patchly
+description: Autonomous software engineering agent that lives inside repositories
+author: Llucs
+
+inputs:
+  mode:
+    description: Operation mode (review, scan, command)
+    required: false
+    default: review
+  provider:
+    description: LLM provider (api or ollama)
+    required: false
+    default: api
+  model:
+    description: Model name for API provider
+    required: false
+    default: deepseek-v4-flash-free
+  ollama_model:
+    description: Ollama model tag for local inference
+    required: false
+    default: qwen3-coder:30b
+  ollama_context_length:
+    description: Context window in tokens for Ollama
+    required: false
+    default: "32000"
+  ollama_flash_attention:
+    description: Enable flash attention for Ollama
+    required: false
+    default: "true"
+  ollama_kv_cache_type:
+    description: KV cache quantization for Ollama
+    required: false
+    default: q8_0
+  ollama_num_thread:
+    description: CPU threads for Ollama inference
+    required: false
+    default: "4"
+  auto_create_issues:
+    description: Automatically create issues for findings
+    required: false
+    default: "true"
+  auto_create_fix_prs:
+    description: Automatically create fix PRs
+    required: false
+    default: "false"
+  config_file:
+    description: Path to custom config file
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install httpx
+
+    - name: Install Patchly
+      shell: bash
+      run: |
+        if [ ! -d "${{ github.action_path }}/src/patchly" ]; then
+          curl -sL https://github.com/Llucs/patchly/releases/latest/download/patchly.tar.gz -o /tmp/patchly.tar.gz
+          mkdir -p ${{ github.action_path }}/src
+          tar xzf /tmp/patchly.tar.gz -C ${{ github.action_path }}/src
+        fi
+        echo "PYTHONPATH=${{ github.action_path }}/src:$PYTHONPATH" >> $GITHUB_ENV
+
+    - name: Run Patchly
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        GITHUB_SHA: ${{ github.sha }}
+        PATCHLY_MODE: ${{ inputs.mode }}
+        PATCHLY_PROVIDER: ${{ inputs.provider }}
+        PATCHLY_MODEL: ${{ inputs.model }}
+        PATCHLY_OLLAMA_MODEL: ${{ inputs.ollama_model }}
+        PATCHLY_OLLAMA_CONTEXT_LENGTH: ${{ inputs.ollama_context_length }}
+        PATCHLY_OLLAMA_FLASH_ATTENTION: ${{ inputs.ollama_flash_attention }}
+        PATCHLY_OLLAMA_KV_CACHE_TYPE: ${{ inputs.ollama_kv_cache_type }}
+        PATCHLY_OLLAMA_NUM_THREAD: ${{ inputs.ollama_num_thread }}
+        PATCHLY_AUTO_CREATE_ISSUES: ${{ inputs.auto_create_issues }}
+        PATCHLY_AUTO_CREATE_FIX_PRS: ${{ inputs.auto_create_fix_prs }}
+        PATCHLY_CONFIG_FILE: ${{ inputs.config_file }}
+      run: python -m patchly

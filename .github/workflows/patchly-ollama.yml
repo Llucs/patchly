@@ -1,0 +1,31 @@
+name: Patchly Ollama Scan
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * 0"
+
+jobs:
+  ollama-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama pull qwen3-coder:30b
+
+      - name: Cache Ollama models
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ollama-${{ runner.os }}-qwen3-coder-30b
+
+      - uses: Llucs/patchly@main
+        with:
+          mode: scan
+          provider: ollama
+          ollama_model: qwen3-coder:30b
+          ollama_context_length: "32000"
+          ollama_flash_attention: "true"
+          ollama_kv_cache_type: q8_0
+          ollama_num_thread: "4"
