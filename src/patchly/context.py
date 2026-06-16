@@ -7,7 +7,7 @@ from patchly.config import GITHUB_SHA, WORKSPACE, PatchlyConfig, load_event
 from patchly.github_client import get_repo_files
 
 
-IGNORED_DIRS = {
+IGNORED_DIRS = IGNORED_PATTERNS = {
     ".git", "__pycache__", "node_modules", ".venv", "venv",
     ".tox", ".eggs", "dist", "build", ".next", ".nuxt",
     "vendor", ".bundle", ".terraform", ".serverless",
