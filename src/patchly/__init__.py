@@ -14,7 +14,7 @@ def _read_version() -> str:
     try:
         return _VERSION_FILE.read_text().strip()
     except (OSError, IOError):
-        return "1.2.0"
+        return "1.3.0"
 
 
 VERSION = _read_version()
