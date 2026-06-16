@@ -4,9 +4,13 @@ Any agent (human or autonomous) working on Patchly MUST follow this contract.
 
 ## CRITICAL RULES
 
-1. **ALWAYS update the version** in `VERSION` file and `src/patchly/__init__.py` when making changes. Follow semver:
+1. **ALWAYS update the version** in ALL THREE places when making changes:
+   - `VERSION` file (single source of truth)
+   - `src/patchly/__init__.py` (reads from VERSION file)
+   - `pyproject.toml` (used for pip packaging)
+   Follow semver:
    - MAJOR: breaking changes
-   - MINOR: new features
+   - MINOR: new features (this is the most common)
    - PATCH: bug fixes
 2. **ALWAYS run all tests** before committing: `PYTHONPATH=src python3 -m pytest tests/`
 3. **ALWAYS check CI** after pushing — ensure the workflow passes on the repo
