@@ -23,12 +23,39 @@ class AnalyzerConfig:
 
 
 @dataclass
+class ContextEngineConfig:
+    max_files: int = 50
+    include_dependencies: bool = True
+    include_import_graph: bool = False
+    diff_only_mode: bool = False
+
+
+@dataclass
+class SafeModeConfig:
+    enabled: bool = True
+    max_file_changes: int = 10
+    require_diff_validation: bool = True
+    block_destructive_changes: bool = True
+
+
+@dataclass
+class OutputsConfig:
+    pr_comments: bool = True
+    issues: bool = True
+    patch_prs: bool = False
+    reports: bool = True
+
+
+@dataclass
 class OllamaConfig:
     model: str = "qwen3-coder:30b"
+    quantization: str = "q3_k_m"
+    gpu_layers: str = "auto"
     context_length: int = 32000
     flash_attention: bool = True
     kv_cache_type: str = "q8_0"
     num_thread: int = 4
+    batch_size: int = 1024
     keep_alive: int = 300
     base_url: str = "http://localhost:11434"
 
@@ -41,6 +68,9 @@ class PatchlyConfig:
     api_base: str = "https://opencode.ai/zen/v1"
     api_key: str = "public"
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
+    context_engine: ContextEngineConfig = field(default_factory=ContextEngineConfig)
+    safe_mode: SafeModeConfig = field(default_factory=SafeModeConfig)
+    outputs: OutputsConfig = field(default_factory=OutputsConfig)
     auto_mode: str = "suggest"
     analyzers: dict[str, AnalyzerConfig] = field(default_factory=lambda: {
         name: AnalyzerConfig() for name in
@@ -126,12 +156,19 @@ def load_config(from_file: str | None = None) -> PatchlyConfig:
             else:
                 setattr(cfg, attr, val)
 
+    _apply_section(data, cfg, "context_engine", ContextEngineConfig)
+    _apply_section(data, cfg, "safe_mode", SafeModeConfig)
+    _apply_section(data, cfg, "outputs", OutputsConfig)
+
     ollama_env_overrides = {
         "model": "PATCHLY_OLLAMA_MODEL",
+        "quantization": "PATCHLY_OLLAMA_QUANTIZATION",
+        "gpu_layers": "PATCHLY_OLLAMA_GPU_LAYERS",
         "context_length": "PATCHLY_OLLAMA_CONTEXT_LENGTH",
         "flash_attention": "PATCHLY_OLLAMA_FLASH_ATTENTION",
         "kv_cache_type": "PATCHLY_OLLAMA_KV_CACHE_TYPE",
         "num_thread": "PATCHLY_OLLAMA_NUM_THREAD",
+        "batch_size": "PATCHLY_OLLAMA_BATCH_SIZE",
         "keep_alive": "PATCHLY_OLLAMA_KEEP_ALIVE",
         "base_url": "PATCHLY_OLLAMA_BASE_URL",
     }
@@ -148,6 +185,26 @@ def load_config(from_file: str | None = None) -> PatchlyConfig:
 
     _CONFIG_CACHE = cfg
     return cfg
+
+
+def _apply_section(
+    data: dict[str, Any],
+    cfg: PatchlyConfig,
+    section_name: str,
+    section_cls: type,
+) -> None:
+    section_data = data.get(section_name, {})
+    if isinstance(section_data, dict):
+        current = getattr(cfg, section_name, None)
+        if current is None:
+            current = section_cls()
+        for k, v in section_data.items():
+            if hasattr(current, k):
+                if isinstance(getattr(current, k), bool) and not isinstance(v, bool):
+                    setattr(current, k, str(v).lower() in ("1", "true", "yes"))
+                else:
+                    setattr(current, k, v)
+        setattr(cfg, section_name, current)
 
 
 def reset_config_cache() -> None:

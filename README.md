@@ -1,65 +1,98 @@
 # Patchly
 
-Autonomous software engineering agent that lives inside GitHub repositories. Patchly acts as an intelligent, continuous maintainer — reviewing code, detecting issues, fixing bugs, modernizing patterns, and evolving the codebase over time.
+Autonomous software engineering agent inside GitHub repositories.
+Connects to almost any LLM — cloud APIs or local models.
 
 ## How it works
 
-Patchly runs inside GitHub Actions and responds to repository events: pull requests, scheduled scans, issues, and direct commands. It builds a contextual understanding of the repository, runs analysis pipelines across multiple dimensions, and takes action — commenting on PRs, opening issues, or creating fix PRs.
+Patchly runs as a GitHub Action triggered by repository events. It builds context, runs multi-dimensional analysis, and acts on findings — reviewing PRs, scanning for issues, fetching web docs, creating fix PRs, and continuously maintaining the codebase.
 
 ```
-Repository event → Context builder → Analysis pipeline → Actions
-                        ↓                    ↓               ↓
-                 File listing        Code quality       PR comment
-                 Dependency map     Architecture       Issue report
-                 Change diff        Performance        Fix PR
-                                    Modernization
-                                    Security
+Event → Context Builder → Analysis Pipeline → Actions
+                             │                    │
+                    ┌────────┼────────┐    ┌──────┴──────┐
+                    │        │        │    │             │
+              Code Quality  Security   │  PR Comment   Fix PR
+              Architecture  Perf      │  Issue Report Auto-Patch
+              Modernization Web Docs  │  Branch       Commit
 ```
 
 ## Modes
 
 ### `review`
-Triggered automatically on pull requests. Analyzes the diff for bugs, code quality, architecture impact, performance regressions, and security vulnerabilities. Posts a structured review comment on the PR.
+Triggered on pull requests. Analyzes diffs for bugs, quality, architecture, performance, security. Posts structured review comments.
 
 ### `scan`
-Runs on a schedule or manually. Scans the entire repository looking for deprecated patterns, code duplication, overly complex functions, architectural smells, performance bottlenecks, and security issues. Results can be reported as issues or saved as reports.
+Scheduled or manual. Scans the full repo for deprecated patterns, code duplication, complex functions, architectural issues, and security vulnerabilities. Can open issues or generate reports.
+
+### `fix`
+Auto-generates patches for detected issues. Creates branches, applies fixes, and opens pull requests — fully autonomous or with human review.
+
+### `continuous`
+Incremental repository maintenance over time. Tracks file modification dates and processes the codebase in small batches, fixing issues and modernizing patterns across many runs.
 
 ### `command`
-Responds to developer commands posted in issues or comments. Commands use the format `/patchly <instruction>` — for example `/patchly refactor the auth module` or `/patchly find performance issues in database queries`.
+Responds to `/patchly <instruction>` commands from issues or comments. Supports any natural language instruction.
+
+### `web`
+Fetches external documentation and resources during analysis. URLs mentioned in issues, PRs, or detected by analyzers are automatically retrieved and included in context.
 
 ## Configuration
 
-Patchly is configured through `.patchly/config.json` in the repository root. All settings have sensible defaults and can be overridden via environment variables.
+Patchly is configured through `.patchly/config.json`. All settings have sensible defaults and can be overridden via `PATCHLY_*` environment variables.
 
 ```json
 {
   "provider": "api",
   "model": "deepseek-v4-flash-free",
-  "api_base": "https://opencode.ai/zen/v1",
-  "auto_mode": "suggest",
-  "comment_on_pr": true,
-  "auto_create_issues": true,
-  "auto_create_fix_prs": false,
-  "analyzers": {
-    "code_quality": {"enabled": true},
-    "architecture": {"enabled": true},
-    "performance": {"enabled": true},
-    "modernization": {"enabled": false},
-    "security": {"enabled": true}
+  "context_engine": {
+    "max_files": 50,
+    "include_dependencies": true,
+    "include_import_graph": false,
+    "diff_only_mode": false
+  },
+  "safe_mode": {
+    "enabled": true,
+    "max_file_changes": 10,
+    "require_diff_validation": true,
+    "block_destructive_changes": true
+  },
+  "outputs": {
+    "pr_comments": true,
+    "issues": true,
+    "patch_prs": false,
+    "reports": true
   },
   "ollama": {
     "model": "qwen3-coder:30b",
+    "quantization": "q3_k_m",
+    "gpu_layers": "auto",
     "context_length": 32000,
     "flash_attention": true,
     "kv_cache_type": "q8_0",
-    "num_thread": 4
+    "num_thread": 4,
+    "batch_size": 1024
+  },
+  "analyzers": {
+    "code_quality": { "enabled": true },
+    "architecture": { "enabled": true },
+    "performance": { "enabled": true },
+    "modernization": { "enabled": false },
+    "security": { "enabled": true }
   }
 }
 ```
 
 ### Provider selection
 
-Set `"provider": "api"` to use cloud LLMs via the OpenCode API (free, no key needed). Set `"provider": "ollama"` to use a local model running on the CI runner. Environment variable override: `PATCHLY_PROVIDER=ollama`.
+Supports any LLM provider via two modes:
+
+| Provider | Setting | Description |
+|----------|---------|-------------|
+| **API** | `"provider": "api"` | Cloud LLMs (OpenCode, OpenAI, Anthropic, DeepSeek, OpenRouter, etc.) |
+| **Ollama** | `"provider": "ollama"` | Local models on the CI runner (Qwen3, DeepSeek, Llama, etc.) |
+
+Set `api_base` to point to any OpenAI-compatible endpoint. Works with OpenCode, OpenAI, Anthropic via proxy, DeepSeek, Groq, OpenRouter, Together, Fireworks, and any custom endpoint.
 
 ### Environment variables
 
@@ -68,112 +101,61 @@ Set `"provider": "api"` to use cloud LLMs via the OpenCode API (free, no key nee
 | `PATCHLY_PROVIDER` | `api` or `ollama` |
 | `PATCHLY_MODEL` | Model name for API provider |
 | `PATCHLY_API_BASE` | API base URL |
-| `PATCHLY_MODE` | `review`, `scan`, or `command` |
+| `PATCHLY_MODE` | `review`, `scan`, `fix`, `continuous`, or `command` |
 | `PATCHLY_AUTO_MODE` | `suggest` or `auto` |
 | `PATCHLY_OLLAMA_MODEL` | Ollama model tag |
-| `PATCHLY_OLLAMA_CONTEXT_LENGTH` | Context window in tokens |
-| `PATCHLY_OLLAMA_FLASH_ATTENTION` | Enable flash attention |
-| `PATCHLY_OLLAMA_KV_CACHE_TYPE` | KV cache quantization |
-| `PATCHLY_OLLAMA_NUM_THREAD` | CPU threads for inference |
+| `PATCHLY_OLLAMA_QUANTIZATION` | Quantization level (q3_k_m, q4, q8_0, etc.) |
+| `PATCHLY_OLLAMA_GPU_LAYERS` | GPU layers (`auto` to detect, `0` for CPU-only) |
+| `PATCHLY_OLLAMA_BATCH_SIZE` | Batch size for prompt processing |
 
 ## Workflows
 
-### PR review workflow
-
-Add `.github/workflows/patchly-pr-review.yml` to your repository:
+### PR review
 
 ```yaml
-name: patchly review
-on:
-  pull_request:
-    types: [opened, synchronize]
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install httpx
-      - run: |
-          curl -sL https://github.com/Llucs/patchly/archive/main.tar.gz | tar xz --strip=1 patchly-main/src/patchly
-      - run: python -m patchly
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
+- uses: Llucs/patchly@main
+  with:
+    mode: review
 ```
 
-### Scheduled scan workflow
+### Scheduled scan
 
 ```yaml
-name: patchly scan
-on:
-  schedule:
-    - cron: "0 6 * * 1"
-  workflow_dispatch:
-jobs:
-  scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install httpx
-      - run: |
-          curl -sL https://github.com/Llucs/patchly/archive/main.tar.gz | tar xz --strip=1 patchly-main/src/patchly
-      - run: python -m patchly --mode=scan
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+- uses: Llucs/patchly@main
+  with:
+    mode: scan
 ```
 
-### Running with Ollama locally
+### Fix mode (auto-patch)
 
 ```yaml
-name: patchly local
-on:
-  workflow_dispatch:
-jobs:
-  analyze:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama pull qwen3-coder:30b
-        env:
-          OLLAMA_FLASH_ATTENTION: "1"
-          OLLAMA_KV_CACHE_TYPE: "q8_0"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.ollama
-          key: ollama-${{ hashFiles('~/.ollama/models/*') }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install httpx
-      - run: |
-          curl -sL https://github.com/Llucs/patchly/archive/main.tar.gz | tar xz --strip=1 patchly-main/src/patchly
-      - run: python -m patchly --mode=scan
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PATCHLY_PROVIDER: ollama
-          PATCHLY_MODE: scan
+- uses: Llucs/patchly@main
+  with:
+    mode: fix
+    auto_create_fix_prs: true
+```
+
+### Continuous maintenance
+
+```yaml
+- uses: Llucs/patchly@main
+  with:
+    mode: continuous
+```
+
+### Local model (Ollama)
+
+```yaml
+- uses: Llucs/patchly@main
+  with:
+    provider: ollama
+    mode: scan
 ```
 
 ## Requirements
 
-- **API mode**: No local hardware requirements. Works with any GitHub-hosted runner.
-- **Ollama mode**: CI runner with ~16GB RAM for Qwen3-Coder 30B (Q3_K_M quantization with optimizations). First run downloads ~15GB model; subsequent runs use GitHub Actions cache.
+- **API mode**: No local hardware. Works on any GitHub-hosted runner.
+- **Ollama mode**: ~16GB RAM for Qwen3-Coder 30B (Q3_K_M). First run downloads ~15GB model.
 - Python 3.11+
 - `httpx` library
 

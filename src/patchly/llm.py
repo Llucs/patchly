@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -13,7 +14,7 @@ from patchly.config import PatchlyConfig
 
 PATCHLY_SYSTEM_PROMPT = """You are Patchly, an autonomous software engineering agent operating inside a GitHub repository.
 
-Your purpose is to analyze, maintain, and improve the codebase continuously. You operate in one of several modes:
+Your purpose is to analyze, maintain, and improve the codebase continuously.
 
 ## Modes
 
@@ -23,8 +24,14 @@ Review pull request changes. Analyze diffs for bugs, style issues, security prob
 ### scan
 Scan the entire repository for issues. Look for deprecated APIs, performance problems, duplicated code, overly complex functions, architectural smells, and security vulnerabilities.
 
+### fix
+Generate patches for detected issues. After fixing, verify the change is correct.
+
+### continuous
+Incremental repository maintenance. Track changes over time, fix small issues, modernize patterns gradually.
+
 ### command
-Respond to direct developer commands. The command specifies exactly what to analyze or modify.
+Respond to direct developer commands via /patchly in issues or comments.
 
 ## Analysis scope
 
@@ -42,6 +49,14 @@ Always structure responses with clear sections. Use Markdown formatting. Include
 Be direct and technical. No unnecessary preamble. No placeholders. Every claim must be backed by specific code evidence."""
 
 
+def log(msg: str) -> None:
+    print(f"  ▶ {msg}", flush=True)
+
+
+def divider() -> None:
+    print("  " + "─" * 60, flush=True)
+
+
 def chat(
     messages: list[dict[str, str]],
     config: PatchlyConfig,
@@ -50,6 +65,7 @@ def chat(
     full = [{"role": "system", "content": system or PATCHLY_SYSTEM_PROMPT}]
     full.extend(messages)
 
+    log("Sending request to LLM...")
     if config.provider == "ollama":
         return _ollama_chat(full, config)
     return _api_chat(full, config)
@@ -62,6 +78,8 @@ def _api_chat(
     timeout: int = 300,
 ) -> str:
     for attempt in range(1, max_retries + 1):
+        if attempt > 1:
+            log(f"Retry attempt {attempt}/{max_retries}...")
         try:
             resp = httpx.post(
                 f"{config.api_base}/chat/completions",
@@ -72,15 +90,22 @@ def _api_chat(
                 json={
                     "model": config.model,
                     "messages": messages,
+                    "stream": False,
                 },
                 timeout=timeout,
             )
             if resp.status_code == 500:
+                log("Server error, retrying...")
                 time.sleep(5)
                 continue
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"].strip()
-        except Exception:
+            content = resp.json()["choices"][0]["message"]["content"].strip()
+            divider()
+            print(content, flush=True)
+            divider()
+            return content
+        except Exception as e:
+            log(f"API error: {e}")
             if attempt < max_retries:
                 time.sleep(5)
     raise RuntimeError("API call failed after retries")
@@ -116,10 +141,16 @@ def _ollama_chat(
                 timeout=600,
             )
             if resp.status_code == 200:
-                return resp.json()["message"]["content"].strip()
+                content = resp.json()["message"]["content"].strip()
+                divider()
+                print(content, flush=True)
+                divider()
+                return content
+            log(f"Ollama error (status {resp.status_code}), retrying...")
             time.sleep(5)
         except httpx.ConnectError:
             if attempt == 0:
+                log("Starting Ollama server...")
                 subprocess.Popen(
                     ["ollama", "serve"],
                     stdout=subprocess.DEVNULL,
