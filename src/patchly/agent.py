@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from patchly.config import (
@@ -15,10 +13,10 @@ from patchly.config import (
 )
 from patchly.llm import PATCHLY_SYSTEM_PROMPT, chat, divider, log as llm_log
 from patchly.analyzers import run_analyzers
-from patchly.actions import execute_actions, ActionResult
+from patchly.actions import ActionResult
 from patchly.context import build_context, list_project_files
-from patchly.memory import load_memory, add_decision, add_pattern, add_known_issue, add_module_rule
-from patchly.risk import score_issue, classify, action_for_score, risk_context as get_risk_context
+from patchly.memory import load_memory, add_decision, add_known_issue
+from patchly.risk import score_issue, classify, risk_context as get_risk_context
 from patchly.safe_mode import check_safe, SafeModeError
 from patchly.web import fetch_safe, extract_urls
 
@@ -142,6 +140,10 @@ class Agent:
         event = self.context.get("event", {})
         pr_data = event.get("pull_request", {})
         pr_number = pr_data.get("number")
+
+        if pr_number is None:
+            llm_log("No pull request number in event — skipping review")
+            return []
 
         llm_log(f"Reviewing PR #{pr_number}...")
 
@@ -375,7 +377,7 @@ class Agent:
         state_file.write_text(json.dumps(state, indent=2))
 
         llm_log(f"Continuous run complete: {len(batch)} files, {len(fixable)} issues")
-        return fix_results + fix_results
+        return fix_results
 
     def _run_command(self, web_context: str, memory_context: str) -> list[ActionResult]:
         event = self.context.get("event", {})
@@ -452,6 +454,8 @@ def _check_division(new_content: str, original_content: str) -> DivisionCheck | 
     orig_lines = original_content.strip().split("\n")
     removed = max(0, len(orig_lines) - len(new_lines))
     added = max(0, len(new_lines) - len(orig_lines))
+    if added == 0:
+        return None
     if removed > len(orig_lines) * 0.5 or removed > added * 3:
         return DivisionCheck(removed, added)
     return None

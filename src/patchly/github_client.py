@@ -23,7 +23,7 @@ def _github_api(
     method: str,
     path: str,
     data: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> Any:
     url = f"{API}{path}"
     resp = httpx.request(method, url, headers=HEADERS, json=data, timeout=30)
     resp.raise_for_status()
@@ -114,7 +114,23 @@ def create_commit(
     )
 
 
-def get_branch_sha(branch: str) -> str:
+DEFAULT_BRANCH: str | None = None
+
+
+def get_default_branch() -> str:
+    global DEFAULT_BRANCH
+    if DEFAULT_BRANCH is not None:
+        return DEFAULT_BRANCH
+    try:
+        data = _github_api("GET", f"/repos/{GITHUB_REPOSITORY}")
+        DEFAULT_BRANCH = data.get("default_branch", "main")
+    except Exception:
+        DEFAULT_BRANCH = "main"
+    return DEFAULT_BRANCH
+
+
+def get_branch_sha(branch: str | None = None) -> str:
+    branch = branch or get_default_branch()
     data = _github_api("GET", f"/repos/{GITHUB_REPOSITORY}/git/refs/heads/{branch}")
     return data["object"]["sha"]
 

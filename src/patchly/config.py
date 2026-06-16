@@ -124,26 +124,36 @@ def load_config(from_file: str | None = None) -> PatchlyConfig:
         "label_prefix": "PATCHLY_LABEL_PREFIX",
     }
 
+    SUB_OBJECT_KEYS = {"analyzers", "ollama", "context_engine", "safe_mode", "outputs"}
+
     config_path = Path(from_file) if from_file else WORKSPACE / PATCHLY_DIR / "config.json"
+    data: dict[str, Any] = {}
     if config_path.exists():
         data = json.loads(config_path.read_text())
-        for k, v in data.items():
-            if k == "analyzers" and isinstance(v, dict):
-                for aname, aopts in v.items():
-                    if aname in cfg.analyzers:
-                        if isinstance(aopts, bool):
-                            cfg.analyzers[aname].enabled = aopts
-                        elif isinstance(aopts, dict):
-                            current = cfg.analyzers[aname]
-                            for ak, av in aopts.items():
-                                if hasattr(current, ak):
-                                    setattr(current, ak, av)
-            elif k == "ollama" and isinstance(v, dict):
-                for ok, ov in v.items():
-                    if hasattr(cfg.ollama, ok):
-                        setattr(cfg.ollama, ok, ov)
-            elif hasattr(cfg, k):
-                setattr(cfg, k, v)
+
+    _apply_section(data, cfg, "context_engine", ContextEngineConfig)
+    _apply_section(data, cfg, "safe_mode", SafeModeConfig)
+    _apply_section(data, cfg, "outputs", OutputsConfig)
+
+    if "analyzers" in data and isinstance(data["analyzers"], dict):
+        for aname, aopts in data["analyzers"].items():
+            if aname in cfg.analyzers:
+                if isinstance(aopts, bool):
+                    cfg.analyzers[aname].enabled = aopts
+                elif isinstance(aopts, dict):
+                    current = cfg.analyzers[aname]
+                    for ak, av in aopts.items():
+                        if hasattr(current, ak):
+                            setattr(current, ak, av)
+
+    if "ollama" in data and isinstance(data["ollama"], dict):
+        for ok, ov in data["ollama"].items():
+            if hasattr(cfg.ollama, ok):
+                setattr(cfg.ollama, ok, ov)
+
+    for k, v in data.items():
+        if k not in SUB_OBJECT_KEYS and hasattr(cfg, k):
+            setattr(cfg, k, v)
 
     for attr, env_key in env_overrides.items():
         val = os.environ.get(env_key)
@@ -155,10 +165,6 @@ def load_config(from_file: str | None = None) -> PatchlyConfig:
                 setattr(cfg, attr, int(val))
             else:
                 setattr(cfg, attr, val)
-
-    _apply_section(data, cfg, "context_engine", ContextEngineConfig)
-    _apply_section(data, cfg, "safe_mode", SafeModeConfig)
-    _apply_section(data, cfg, "outputs", OutputsConfig)
 
     ollama_env_overrides = {
         "model": "PATCHLY_OLLAMA_MODEL",

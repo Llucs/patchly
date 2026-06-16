@@ -1,10 +1,10 @@
 from pathlib import Path
-from patchly.context import IGNORED_PATTERNS, TEXT_EXTENSIONS
+from patchly.context import IGNORED_DIRS, TEXT_EXTENSIONS
 
 
 def test_ignored_patterns():
-    assert ".git" in IGNORED_PATTERNS
-    assert "node_modules" in IGNORED_PATTERNS
+    assert ".git" in IGNORED_DIRS
+    assert "node_modules" in IGNORED_DIRS
 
 
 def test_text_extensions():
@@ -15,7 +15,7 @@ def test_text_extensions():
 
 def test_ignored_path_detection():
     parts = ("project", ".git", "config")
-    assert any(p in IGNORED_PATTERNS for p in parts)
+    assert any(p in IGNORED_DIRS for p in parts)
 
     parts = ("project", "src", "main.py")
-    assert not any(p in IGNORED_PATTERNS for p in parts)
+    assert not any(p in IGNORED_DIRS for p in parts)

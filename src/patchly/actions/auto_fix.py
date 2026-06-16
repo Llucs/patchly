@@ -9,6 +9,7 @@ from patchly.github_client import (
     create_pr,
     get_branch_sha,
     get_file_content,
+    get_default_branch,
 )
 from patchly.llm import chat
 
@@ -44,7 +45,7 @@ def apply_fix_as_pr(
 
     from patchly.github_client import API, HEADERS, GITHUB_REPOSITORY
 
-    sha = get_branch_sha("main")
+    sha = get_branch_sha(get_default_branch())
     ref_resp = httpx.post(
         f"{API}/repos/{GITHUB_REPOSITORY}/git/refs",
         headers=HEADERS,
@@ -55,7 +56,7 @@ def apply_fix_as_pr(
         return None
 
     try:
-        current = get_file_content(file_path, "main")
+        current = get_file_content(file_path, get_default_branch())
         current_sha = ""
         if current is not None:
             info = httpx.get(

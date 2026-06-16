@@ -16,6 +16,7 @@ from patchly.github_client import (
     GITHUB_REPOSITORY,
     create_pr,
     get_branch_sha,
+    get_default_branch,
     get_file_content,
 )
 from patchly.llm import chat, log as llm_log
@@ -23,11 +24,12 @@ from patchly.llm import chat, log as llm_log
 FIXES_DIR = WORKSPACE / PATCHLY_DIR / "fixes"
 
 
-def execute(config: PatchlyConfig) -> list[ActionResult]:
+def execute(config: PatchlyConfig) -> int:
+    config.mode = "fix"
     from patchly.agent import Agent
 
     agent = Agent(config)
-    return agent._run_fix("", load_memory_context())
+    return agent.run()
 
 
 def load_memory_context() -> str:
@@ -101,7 +103,7 @@ def _apply_fix_as_pr(issue: ActionResult, fix: ActionResult, config: PatchlyConf
     llm_log(f"  Creating branch {branch_name}...")
 
     try:
-        main_sha = get_branch_sha("main")
+        main_sha = get_branch_sha(get_default_branch())
     except Exception as e:
         llm_log(f"  Cannot get main branch SHA: {e}")
         return None
