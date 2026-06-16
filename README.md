@@ -1,7 +1,9 @@
-# Patchly
+# Patchly (WIP)
 
 Autonomous software engineering agent inside GitHub repositories.
 Connects to almost any LLM — cloud APIs or local models.
+
+### We need contributors; this project is constantly evolving!
 
 ## How it works
 
