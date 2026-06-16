@@ -7,7 +7,7 @@ DEPRECATED_PATTERNS: dict[str, list[tuple[str, str, str]]] = {
     ".py": [
         (r"import (\w+)\s+as", "Use `from x import y` style", "import style"),
         (r"print\s*`", "Use print() function", "python2 style"),
-        (r"(\w+)\.format\(", "Use f-strings", "string formatting"),
+        (r"\.format\(", "Use f-strings", "string formatting"),
         (r"os\.path\.(join|exists|isfile)", "Use pathlib.Path", "path handling"),
     ],
     ".js": [
