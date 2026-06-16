@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from patchly.config import WORKSPACE, PatchlyConfig, load_event
+from patchly.config import GITHUB_SHA, WORKSPACE, PatchlyConfig, load_event
 from patchly.github_client import get_repo_files
 
 
-IGNORED_PATTERNS = {
+IGNORED_DIRS = {
     ".git", "__pycache__", "node_modules", ".venv", "venv",
     ".tox", ".eggs", "dist", "build", ".next", ".nuxt",
     "vendor", ".bundle", ".terraform", ".serverless",
@@ -17,25 +17,32 @@ IGNORED_PATTERNS = {
 TEXT_EXTENSIONS = {
     ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java",
     ".rb", ".php", ".c", ".cpp", ".h", ".hpp", ".cs", ".swift",
-    ".kt", ".scala", ".ex", ".exs", ".clj", ".cljs",
-    ".css", ".scss", ".less", ".html", ".htm", ".xml", ".svg",
+    ".kt", ".scala",
+    ".css", ".scss", ".less", ".html", ".xml", ".svg",
     ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
-    ".md", ".rst", ".txt", ".env", ".gitignore", ".dockerfile",
-    ".sql", ".graphql", ".proto", ".gradle", ".makefile",
-    "Dockerfile", "Makefile", "docker-compose.yml",
+    ".md", ".rst", ".txt",
+    ".sql", ".graphql", ".proto", ".gradle",
+    "Dockerfile", "Makefile",
 }
 
 
 def build_context(config: PatchlyConfig) -> dict[str, Any]:
     event = load_event()
-    ref = event.get("pull_request", {}).get("head", {}).get("sha", "") or config.model
+    ref = GITHUB_SHA or event.get("pull_request", {}).get("head", {}).get("sha", "")
 
-    files = get_repo_files(ref)
+    if config.mode == "review" and ref:
+        try:
+            remote = get_repo_files(ref)
+        except Exception:
+            remote = []
+    else:
+        remote = []
+
     relevant = []
-    for f in files:
+    for f in remote:
         path = f.get("path", "")
         parts = Path(path).parts
-        if any(p in IGNORED_PATTERNS for p in parts):
+        if any(p in IGNORED_DIRS for p in parts):
             continue
         ext = Path(path).suffix
         if ext.lower() in TEXT_EXTENSIONS or Path(path).name in TEXT_EXTENSIONS:
@@ -47,15 +54,16 @@ def build_context(config: PatchlyConfig) -> dict[str, Any]:
         "repository": event.get("repository", {}).get("full_name", ""),
         "files": relevant,
         "event": event,
-        "ref": ref,
+        "ref": ref or "main",
     }
 
 
-def list_project_files() -> list[Path]:
-    result = []
-    for p in WORKSPACE.rglob("*"):
+def list_project_files(root: Path | None = None) -> list[Path]:
+    base = root or WORKSPACE
+    files = []
+    for p in base.rglob("*"):
         if p.is_file():
-            parts = p.relative_to(WORKSPACE).parts
-            if not any(part in IGNORED_PATTERNS for part in parts):
-                result.append(p)
-    return sorted(result)
+            rel = p.relative_to(base)
+            if not any(part in IGNORED_DIRS for part in rel.parts):
+                files.append(p)
+    return sorted(files)

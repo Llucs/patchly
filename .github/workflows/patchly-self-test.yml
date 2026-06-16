@@ -20,6 +20,9 @@ jobs:
       - name: Install dependencies
         run: pip install httpx pytest
 
+      - name: Set up Python path
+        run: echo "PYTHONPATH=${{ github.workspace }}/src:$PYTHONPATH" >> $GITHUB_ENV
+
       - name: Run tests
         run: python -m pytest tests/ -v
 

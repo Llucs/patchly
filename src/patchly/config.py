@@ -55,8 +55,13 @@ class PatchlyConfig:
 
 
 def load_event() -> dict[str, Any]:
-    if EVENT_PATH.exists():
-        return json.loads(EVENT_PATH.read_text())
+    try:
+        if EVENT_PATH.exists() and EVENT_PATH.stat().st_size > 0:
+            raw = EVENT_PATH.read_text()
+            if raw.strip():
+                return json.loads(raw)
+    except Exception:
+        pass
     return {}
 
 
