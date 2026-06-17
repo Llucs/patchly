@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,14 +19,34 @@ HEADERS = {
     "User-Agent": "patchly",
 }
 
+_cache: dict[tuple, dict[str, Any]] = {}
+_cache_ttl = 60  # seconds
+
+
+def _cache_key(method: str, path: str, accept: str | None = None) -> tuple:
+    return (method, path, accept)
+
 
 def _github_api(
     method: str,
     path: str,
     data: dict[str, Any] | None = None,
+    accept: str | None = None,
+    raw_response: bool = False,
 ) -> Any:
+    headers = HEADERS.copy()
+    if accept:
+        headers["Accept"] = accept
+
+    # Cache only idempotent GET requests without payload
+    if method == "GET" and data is None:
+        key = _cache_key(method, path, accept)
+        cached = _cache.get(key)
+        if cached and (time.time() - cached["timestamp"]) < _cache_ttl:
+            return cached["data"]
+
     url = f"{API}{path}"
-    resp = httpx.request(method, url, headers=HEADERS, json=data, timeout=30)
+    resp = httpx.request(method, url, headers=headers, json=data, timeout=30)
     if resp.status_code == 403:
         raise PermissionError(
             f"GitHub API 403 on {method} {path}. "
@@ -37,9 +58,20 @@ def _github_api(
             "  issues: write\n"
         )
     resp.raise_for_status()
-    if resp.text:
-        return resp.json()
-    return {}
+
+    if raw_response:
+        result: Any = resp.text
+    elif resp.text:
+        result = resp.json()
+    else:
+        result = {}
+
+    # Store successful GET results in cache
+    if method == "GET" and data is None:
+        key = _cache_key(method, path, accept)
+        _cache[key] = {"data": result, "timestamp": time.time()}
+
+    return result
 
 
 def get_pr(pr_number: int) -> dict[str, Any]:
@@ -62,10 +94,12 @@ def get_pr_files(pr_number: int) -> list[dict[str, Any]]:
 
 
 def get_pr_diff(pr_number: int) -> str:
-    url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/pulls/{pr_number}"
-    resp = httpx.get(url, headers={**HEADERS, "Accept": "application/vnd.github.v3.diff"}, timeout=30)
-    resp.raise_for_status()
-    return resp.text
+    return _github_api(
+        "GET",
+        f"/repos/{GITHUB_REPOSITORY}/pulls/{pr_number}",
+        accept="application/vnd.github.v3.diff",
+        raw_response=True,
+    )
 
 
 def get_file_content(path: str, ref: str = "main") -> str | None:
@@ -155,19 +189,12 @@ def create_commit(
     )
 
 
-DEFAULT_BRANCH: str | None = None
-
-
 def get_default_branch() -> str:
-    global DEFAULT_BRANCH
-    if DEFAULT_BRANCH is not None:
-        return DEFAULT_BRANCH
     try:
         data = _github_api("GET", f"/repos/{GITHUB_REPOSITORY}")
-        DEFAULT_BRANCH = data.get("default_branch", "main")
+        return data.get("default_branch", "main")
     except Exception:
-        DEFAULT_BRANCH = "main"
-    return DEFAULT_BRANCH
+        return "main"
 
 
 def get_branch_sha(branch: str | None = None) -> str:
