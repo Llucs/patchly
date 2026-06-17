@@ -18,14 +18,24 @@ HEADERS = {
     "User-Agent": "patchly",
 }
 
+client = httpx.Client(
+    base_url=API,
+    headers=HEADERS,
+    timeout=httpx.Timeout(30.0),
+    limits=httpx.Limits(
+        max_keepalive_connections=10,
+        max_connections=20,
+        keepalive_expiry=30.0,
+    ),
+)
+
 
 def _github_api(
     method: str,
     path: str,
     data: dict[str, Any] | None = None,
 ) -> Any:
-    url = f"{API}{path}"
-    resp = httpx.request(method, url, headers=HEADERS, json=data, timeout=30)
+    resp = client.request(method, path, json=data)
     if resp.status_code == 403:
         raise PermissionError(
             f"GitHub API 403 on {method} {path}. "
@@ -62,8 +72,8 @@ def get_pr_files(pr_number: int) -> list[dict[str, Any]]:
 
 
 def get_pr_diff(pr_number: int) -> str:
-    url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/pulls/{pr_number}"
-    resp = httpx.get(url, headers={**HEADERS, "Accept": "application/vnd.github.v3.diff"}, timeout=30)
+    path = f"/repos/{GITHUB_REPOSITORY}/pulls/{pr_number}"
+    resp = client.get(path, headers={"Accept": "application/vnd.github.v3.diff"})
     resp.raise_for_status()
     return resp.text
 

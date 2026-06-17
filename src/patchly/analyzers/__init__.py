@@ -21,6 +21,14 @@ def run_analyzers(files: list[Path], config: PatchlyConfig) -> list[ActionResult
         "security": SecurityAnalyzer,
     }
 
+    # Pre-read all files to avoid redundant I/O
+    file_contents: dict[Path, str | None] = {}
+    for file in files:
+        try:
+            file_contents[file] = file.read_text()
+        except Exception:
+            file_contents[file] = None
+
     results = []
     for name, acfg in config.analyzers.items():
         if not acfg.enabled:
@@ -30,7 +38,7 @@ def run_analyzers(files: list[Path], config: PatchlyConfig) -> list[ActionResult
             continue
         analyzer = cls(config)
         try:
-            batch = analyzer.analyze(files)
+            batch = analyzer.analyze(files, file_contents=file_contents)
             results.extend(batch)
         except Exception as e:
             results.append(ActionResult(name, "error", f"Analyzer failed: {e}"))

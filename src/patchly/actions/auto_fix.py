@@ -55,32 +55,28 @@ def apply_fix_as_pr(
     if ref_resp.status_code != 201:
         return None
 
-    try:
-        current = get_file_content(file_path, get_default_branch())
-        current_sha = ""
-        if current is not None:
-            info = httpx.get(
-                f"{API}/repos/{GITHUB_REPOSITORY}/contents/{file_path}",
-                headers=HEADERS,
-                timeout=15,
-            )
-            if info.status_code == 200:
-                current_sha = info.json().get("sha", "")
+    current_sha = ""
+    response = httpx.get(
+        f"{API}/repos/{GITHUB_REPOSITORY}/contents/{file_path}",
+        headers=HEADERS,
+        params={"ref": get_default_branch()},
+        timeout=15,
+    )
+    if response.status_code == 200:
+        current_sha = response.json().get("sha", "")
 
-        put = httpx.put(
-            f"{API}/repos/{GITHUB_REPOSITORY}/contents/{file_path}",
-            headers=HEADERS,
-            json={
-                "message": f"patchly: auto-fix {file_path}",
-                "content": base64.b64encode(new_content.encode()).decode(),
-                "sha": current_sha,
-                "branch": branch_name,
-            },
-            timeout=15,
-        )
-        if put.status_code not in (200, 201):
-            return None
-    except Exception:
+    put = httpx.put(
+        f"{API}/repos/{GITHUB_REPOSITORY}/contents/{file_path}",
+        headers=HEADERS,
+        json={
+            "message": f"patchly: auto-fix {file_path}",
+            "content": base64.b64encode(new_content.encode()).decode(),
+            "sha": current_sha,
+            "branch": branch_name,
+        },
+        timeout=15,
+    )
+    if put.status_code not in (200, 201):
         return None
 
     pr = create_pr(
