@@ -1,4 +1,4 @@
-from importlib.metadata import version as _pkg_version
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
 
 _VERSION_FILE = Path(__file__).resolve().parent.parent.parent / "VERSION"
@@ -6,13 +6,15 @@ _VERSION_FILE = Path(__file__).resolve().parent.parent.parent / "VERSION"
 
 def _read_version() -> str:
     try:
-        return _VERSION_FILE.read_text().strip()
-    except (OSError, IOError):
+        return _pkg_version("patchly")
+    except PackageNotFoundError:
         pass
     try:
-        return _pkg_version("patchly")
-    except Exception:
-        return "0.0.0"
+        if _VERSION_FILE.is_file():
+            return _VERSION_FILE.read_text().strip()
+    except (OSError, IOError):
+        pass
+    return "0.0.0"
 
 
 VERSION = _read_version()
