@@ -527,12 +527,19 @@ class Agent:
             except Exception:
                 body_lines.append(f"- #{number}")
 
-        pr = create_pr(
-            title=f"Patchly: batch fix ({len(changed_files)} file(s))",
-            body="\n".join(body_lines),
-            head=branch_name,
-        )
-        pr_url = pr.get("html_url", "")
+        try:
+            pr = create_pr(
+                title=f"Patchly: batch fix ({len(changed_files)} file(s))",
+                body="\n".join(body_lines),
+                head=branch_name,
+            )
+            pr_url = pr.get("html_url", "")
+        except PermissionError as e:
+            llm_log(f"  PR creation failed — insufficient permissions: {e}")
+            pr_url = ""
+        except Exception as e:
+            llm_log(f"  PR creation failed: {e}")
+            pr_url = ""
 
         if pr_url:
             for number, _, _ in fixes:

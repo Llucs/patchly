@@ -42,6 +42,7 @@ jobs:
           PATCHLY_AUTO_CREATE_ISSUES: "true"
 
       - name: Fix all open issues
+        continue-on-error: true
         shell: bash
         run: python -m patchly --mode=resolve
         env:
