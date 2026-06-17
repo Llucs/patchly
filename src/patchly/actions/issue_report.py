@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from patchly.actions import ActionResult
 from patchly.github_client import create_issue
 from patchly.config import PatchlyConfig
@@ -22,6 +24,6 @@ def report_results(results: list[ActionResult], config: PatchlyConfig) -> list[s
                 issue = create_issue(title, body, ["patchly", r.severity])
                 urls.append(issue.get("html_url", ""))
             except Exception:
-                pass
+                logging.warning("Failed to create issue for '%s'", title, exc_info=True)
 
     return urls
