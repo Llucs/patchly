@@ -24,6 +24,8 @@ ACTIONABLE_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+_file_cache: dict[Path, str] = {}
+
 
 class BaseAnalyzer(ABC):
     def __init__(self, config):
@@ -103,3 +105,17 @@ class BaseAnalyzer(ABC):
         if current:
             parts.append("\n".join(current))
         return parts if len(parts) > 1 else []
+
+    @staticmethod
+    def _read_file(path: Path) -> str:
+        if path not in _file_cache:
+            _file_cache[path] = path.read_text(encoding='utf-8')
+        return _file_cache[path]
+
+    @staticmethod
+    def _get_files_content(files: list[Path]) -> str:
+        return "\n\n".join(BaseAnalyzer._read_file(f) for f in files)
+
+    @staticmethod
+    def clear_cache() -> None:
+        _file_cache.clear()
