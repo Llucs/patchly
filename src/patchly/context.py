@@ -1,38 +1,53 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, List, Optional
 
-from patchly.config import GITHUB_SHA, WORKSPACE, PatchlyConfig, load_event
-from patchly.github_client import get_repo_files
-
-
-IGNORED_DIRS = {
-    ".git", "__pycache__", "node_modules", ".venv", "venv",
-    ".tox", ".eggs", "dist", "build", ".next", ".nuxt",
-    "vendor", ".bundle", ".terraform", ".serverless",
-    "site-packages", "target", "bin", "obj",
-}
-
-TEXT_EXTENSIONS = {
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java",
-    ".rb", ".php", ".c", ".cpp", ".h", ".hpp", ".cs", ".swift",
-    ".kt", ".scala",
-    ".css", ".scss", ".less", ".html", ".xml", ".svg",
-    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
-    ".md", ".rst", ".txt",
-    ".sql", ".graphql", ".proto", ".gradle",
-    "Dockerfile", "Makefile",
-}
+from patchly.policies.file_filtering import IGNORED_DIRS, TEXT_EXTENSIONS
 
 
-def build_context(config: PatchlyConfig) -> dict[str, Any]:
-    event = load_event()
-    ref = GITHUB_SHA or event.get("pull_request", {}).get("head", {}).get("sha", "")
+# Event system
+class ContextEvent:
+    def __init__(self, context: Optional[dict[str, Any]] = None) -> None:
+        self.context = context or {}
 
-    if config.mode == "review" and ref:
+
+class ContextObserver:
+    def on_building(self, event: ContextEvent) -> None:
+        pass
+
+    def on_built(self, event: ContextEvent) -> None:
+        pass
+
+
+_observers: List[ContextObserver] = []
+
+
+def register_observer(observer: ContextObserver) -> None:
+    _observers.append(observer)
+
+
+def unregister_observer(observer: ContextObserver) -> None:
+    _observers.remove(observer)
+
+
+def build_context(
+    config: Any,
+    ref: str,
+    remote_file_repo: Callable[[str], list[dict]],
+    workspace: Path,
+    event_data: dict[str, Any],
+) -> dict[str, Any]:
+    # Notify observers
+    event = ContextEvent()
+    for obs in _observers:
+        obs.on_building(event)
+
+    mode = getattr(config, 'mode', 'review')
+
+    if mode == "review" and ref:
         try:
-            remote = get_repo_files(ref)
+            remote = remote_file_repo(ref)
         except Exception:
             remote = []
     else:
@@ -50,16 +65,22 @@ def build_context(config: PatchlyConfig) -> dict[str, Any]:
         if len(relevant) >= config.max_files_per_run:
             break
 
-    return {
-        "repository": event.get("repository", {}).get("full_name", ""),
+    context = {
+        "repository": event_data.get("repository", {}).get("full_name", ""),
         "files": relevant,
-        "event": event,
+        "event": event_data,
         "ref": ref or "main",
     }
 
+    event.context = context
+    for obs in _observers:
+        obs.on_built(event)
+
+    return context
+
 
 def list_project_files(root: Path | None = None) -> list[Path]:
-    base = root or WORKSPACE
+    base = root or Path.cwd()
     files = []
     for p in base.rglob("*"):
         if p.is_file():
