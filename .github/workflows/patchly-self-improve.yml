@@ -1,0 +1,53 @@
+name: Patchly Self-Improvement
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  improve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: bash
+        run: pip install httpx
+
+      - name: Set up Python path
+        shell: bash
+        run: echo "PYTHONPATH=${{ github.workspace }}/src:$PYTHONPATH" >> $GITHUB_ENV
+
+      - name: Scan for issues
+        shell: bash
+        run: python -m patchly --mode=scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: schedule
+          GITHUB_EVENT_PATH: /dev/null
+          GITHUB_SHA: ${{ github.sha }}
+          PATCHLY_AUTO_CREATE_ISSUES: "true"
+
+      - name: Fix all open issues
+        shell: bash
+        run: python -m patchly --mode=resolve
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: schedule
+          GITHUB_EVENT_PATH: /dev/null
+          GITHUB_SHA: ${{ github.sha }}
+          PATCHLY_AUTO_CREATE_FIX_PRS: "true"
+          PATCHLY_BATCH_FIX_PRS: "true"

@@ -44,6 +44,7 @@ class OutputsConfig:
     issues: bool = True
     patch_prs: bool = False
     reports: bool = True
+    batch_fix_prs: bool = False
 
 
 @dataclass
@@ -200,6 +201,9 @@ def load_config(from_file: str | None = None) -> PatchlyConfig:
     _auto_fix_env = os.environ.get("PATCHLY_AUTO_CREATE_FIX_PRS")
     if _auto_fix_env is not None:
         cfg.outputs.patch_prs = _auto_fix_env.lower() in ("1", "true", "yes")
+    _batch_fix_env = os.environ.get("PATCHLY_BATCH_FIX_PRS")
+    if _batch_fix_env is not None:
+        cfg.outputs.batch_fix_prs = _batch_fix_env.lower() in ("1", "true", "yes")
 
     return cfg
 
