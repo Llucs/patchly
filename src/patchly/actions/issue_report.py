@@ -4,11 +4,12 @@ from patchly.actions import ActionResult
 from patchly.github_client import create_issue
 from patchly.config import PatchlyConfig
 
-
 def report_results(results: list[ActionResult], config: PatchlyConfig) -> list[str]:
     urls = []
     if not config.auto_create_issues:
         return urls
+
+    max_body_length = 3000
 
     for r in results:
         if r.severity in ("error", "warning"):
@@ -16,7 +17,7 @@ def report_results(results: list[ActionResult], config: PatchlyConfig) -> list[s
             body = (
                 f"**Analyzer**: {r.analyzer}\n"
                 f"**Severity**: {r.severity}\n\n"
-                f"{r.description}\n"
+                f"{r.description[:max_body_length]}\n"
             )
             try:
                 issue = create_issue(title, body, ["patchly", r.severity])
