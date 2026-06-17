@@ -177,6 +177,7 @@ class OllamaProvider(LLMProvider):
 # Mapping of provider identifiers to provider instances
 _providers: Dict[str, LLMProvider] = {
     "openai": OpenAICompatibleProvider(),
+    "api": OpenAICompatibleProvider(),
     "ollama": OllamaProvider(),
 }
 
