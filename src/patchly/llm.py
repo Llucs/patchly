@@ -5,7 +5,8 @@ import os
 import subprocess
 import sys
 import time
-from typing import Any
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -57,108 +58,152 @@ def divider() -> None:
     print("  " + "─" * 60, flush=True)
 
 
+class LLMProvider(ABC):
+    """Abstract base class for LLM providers."""
+
+    @abstractmethod
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        config: PatchlyConfig,
+        system: Optional[str] = None,
+    ) -> str:
+        ...
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    """Provider for OpenAI-compatible API (e.g., OpenAI, vLLM, etc.)."""
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        config: PatchlyConfig,
+        system: Optional[str] = None,
+        max_retries: int = 3,
+        timeout: int = 300,
+    ) -> str:
+        for attempt in range(1, max_retries + 1):
+            if attempt > 1:
+                log(f"Retry attempt {attempt}/{max_retries}...")
+            try:
+                resp = httpx.post(
+                    f"{config.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {config.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": config.model,
+                        "messages": messages,
+                        "stream": False,
+                    },
+                    timeout=timeout,
+                )
+                if resp.status_code == 500:
+                    log("Server error, retrying...")
+                    time.sleep(5)
+                    continue
+                resp.raise_for_status()
+                content = resp.json()["choices"][0]["message"]["content"].strip()
+                divider()
+                print(content, flush=True)
+                divider()
+                return content
+            except Exception as e:
+                log(f"API error: {e}")
+                if attempt < max_retries:
+                    time.sleep(5)
+        raise RuntimeError("API call failed after retries")
+
+
+class OllamaProvider(LLMProvider):
+    """Provider for locally running Ollama servers."""
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        config: PatchlyConfig,
+        system: Optional[str] = None,
+    ) -> str:
+        cfg = config.ollama
+        payload = {
+            "model": cfg.model,
+            "messages": messages,
+            "options": {
+                "num_ctx": cfg.context_length,
+                "num_thread": cfg.num_thread,
+            },
+            "keep_alive": f"{cfg.keep_alive}s",
+            "stream": False,
+        }
+
+        env = os.environ.copy()
+        if cfg.flash_attention:
+            env["OLLAMA_FLASH_ATTENTION"] = "1"
+        if cfg.kv_cache_type:
+            env["OLLAMA_KV_CACHE_TYPE"] = cfg.kv_cache_type
+
+        for attempt in range(3):
+            try:
+                resp = httpx.post(
+                    f"{cfg.base_url}/api/chat",
+                    json=payload,
+                    timeout=600,
+                )
+                if resp.status_code == 200:
+                    content = resp.json()["message"]["content"].strip()
+                    divider()
+                    print(content, flush=True)
+                    divider()
+                    return content
+                log(f"Ollama error (status {resp.status_code}), retrying...")
+                time.sleep(5)
+            except httpx.ConnectError:
+                if attempt == 0:
+                    log("Starting Ollama server...")
+                    subprocess.Popen(
+                        ["ollama", "serve"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        env=env,
+                    )
+                    time.sleep(10)
+                else:
+                    time.sleep(5)
+
+        raise RuntimeError("Ollama call failed after retries")
+
+
+# Mapping of provider identifiers to provider instances
+_providers: Dict[str, LLMProvider] = {
+    "openai": OpenAICompatibleProvider(),
+    "ollama": OllamaProvider(),
+}
+
+
+def get_provider(provider_name: str) -> LLMProvider:
+    """Retrieve the appropriate LLM provider by name."""
+    if provider_name not in _providers:
+        raise ValueError(
+            f"Unknown LLM provider '{provider_name}'. Available: {list(_providers.keys())}"
+        )
+    return _providers[provider_name]
+
+
+def set_provider(provider_name: str, provider: LLMProvider) -> None:
+    """Register or override a provider (useful for testing)."""
+    _providers[provider_name] = provider
+
+
 def chat(
     messages: list[dict[str, str]],
     config: PatchlyConfig,
     system: str | None = None,
 ) -> str:
+    """Send a chat conversation to the configured LLM provider."""
     full = [{"role": "system", "content": system or PATCHLY_SYSTEM_PROMPT}]
     full.extend(messages)
 
     log("Sending request to LLM...")
-    if config.provider == "ollama":
-        return _ollama_chat(full, config)
-    return _api_chat(full, config)
-
-
-def _api_chat(
-    messages: list[dict[str, str]],
-    config: PatchlyConfig,
-    max_retries: int = 3,
-    timeout: int = 300,
-) -> str:
-    for attempt in range(1, max_retries + 1):
-        if attempt > 1:
-            log(f"Retry attempt {attempt}/{max_retries}...")
-        try:
-            resp = httpx.post(
-                f"{config.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {config.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": config.model,
-                    "messages": messages,
-                    "stream": False,
-                },
-                timeout=timeout,
-            )
-            if resp.status_code == 500:
-                log("Server error, retrying...")
-                time.sleep(5)
-                continue
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"].strip()
-            divider()
-            print(content, flush=True)
-            divider()
-            return content
-        except Exception as e:
-            log(f"API error: {e}")
-            if attempt < max_retries:
-                time.sleep(5)
-    raise RuntimeError("API call failed after retries")
-
-
-def _ollama_chat(
-    messages: list[dict[str, str]],
-    config: PatchlyConfig,
-) -> str:
-    cfg = config.ollama
-    payload = {
-        "model": cfg.model,
-        "messages": messages,
-        "options": {
-            "num_ctx": cfg.context_length,
-            "num_thread": cfg.num_thread,
-        },
-        "keep_alive": f"{cfg.keep_alive}s",
-        "stream": False,
-    }
-
-    env = os.environ.copy()
-    if cfg.flash_attention:
-        env["OLLAMA_FLASH_ATTENTION"] = "1"
-    if cfg.kv_cache_type:
-        env["OLLAMA_KV_CACHE_TYPE"] = cfg.kv_cache_type
-
-    for attempt in range(3):
-        try:
-            resp = httpx.post(
-                f"{cfg.base_url}/api/chat",
-                json=payload,
-                timeout=600,
-            )
-            if resp.status_code == 200:
-                content = resp.json()["message"]["content"].strip()
-                divider()
-                print(content, flush=True)
-                divider()
-                return content
-            log(f"Ollama error (status {resp.status_code}), retrying...")
-            time.sleep(5)
-        except httpx.ConnectError:
-            if attempt == 0:
-                log("Starting Ollama server...")
-                subprocess.Popen(
-                    ["ollama", "serve"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    env=env,
-                )
-                time.sleep(10)
-            else:
-                time.sleep(5)
-
-    raise RuntimeError("Ollama call failed after retries")
+    provider = get_provider(config.provider)
+    return provider.chat(full, config, system)
