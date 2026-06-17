@@ -58,16 +58,12 @@ def build_context(config: PatchlyConfig) -> dict[str, Any]:
     }
 
 
-def list_project_files(root: Path | None = None) -> list[str]:
+def list_project_files(root: Path | None = None) -> list[Path]:
     base = root or WORKSPACE
-    previews = []
+    files = []
     for p in base.rglob("*"):
         if p.is_file():
             rel = p.relative_to(base)
             if not any(part in IGNORED_DIRS for part in rel.parts):
-                try:
-                    with open(p, "r") as f:
-                        previews.append(f.read(3000))
-                except Exception:
-                    pass
-    return previews
+                files.append(p)
+    return files

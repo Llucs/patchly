@@ -5,7 +5,7 @@ import sys
 from patchly.agent import Agent
 from patchly.config import PatchlyConfig, load_config
 
-VALID_MODES = {"auto", "fix", "review", "scan", "command", "continuous"}
+VALID_MODES = {"auto", "fix", "review", "scan", "command", "continuous", "resolve"}
 
 
 def main():

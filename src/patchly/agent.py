@@ -313,7 +313,33 @@ class Agent:
             return []
 
         # Run analyzers with safe context
-        results = run_analyzers(source_files, self.config, memory_context)
+        results = run_analyzers(source_files, self.config)
+
+        errors = [r for r in results if r.severity == "error"]
+        warnings = [r for r in results if r.severity == "warning"]
+
+        llm_log(f"Scan complete: {len(errors)} error(s), {len(warnings)} warning(s)")
+
+        actionable = errors + warnings
+        if actionable and self.config.outputs.issues:
+            from patchly.github_client import create_issue
+
+            for r in actionable:
+                risk_score = score_issue(r)
+                level = classify(risk_score)
+                llm_log(f"Issue: {r.title[:80]} (risk: {level})")
+                try:
+                    create_issue(
+                        f"Patchly: {r.title}",
+                        f"{r.description}\n\n**Risk:** {level}\n\n```\n{r.detail[:5000]}\n```",
+                        [f"{self.config.label_prefix}", r.severity, level],
+                    )
+                    llm_log(f"  ✓ Issue created")
+                except PermissionError:
+                    llm_log(f"  ✗ Cannot create issue — need `issues: write` permission")
+                except Exception as e:
+                    llm_log(f"  ✗ Failed to create issue: {e}")
+
         return results
 
     def _run_fix(self, web_context: str, memory_context: str) -> list[ActionResult]:
@@ -333,9 +359,269 @@ class Agent:
         return []
 
     def _run_resolve(self, memory_context: str) -> list[ActionResult]:
-        # Placeholder
-        llm_log("Running resolve mode...")
-        return []
+        llm_log("Resolve mode: fetching open issues...")
+
+        from patchly.github_client import (
+            add_labels,
+            create_comment,
+            list_issues,
+            update_issue,
+        )
+
+        issues = list_issues(label=self.config.label_prefix, state="open")
+        if not issues:
+            llm_log("No open issues to resolve")
+            return []
+
+        llm_log(f"Found {len(issues)} open issue(s)")
+        fixes = []
+        results = []
+
+        for issue in issues:
+            number = issue["number"]
+            title = issue["title"]
+            body = issue.get("body", "")
+            labels = [l["name"] for l in issue.get("labels", [])]
+
+            if "resolving" in labels or "resolved" in labels:
+                llm_log(f"  #{number} — already being processed, skipping")
+                continue
+
+            llm_log(f"  #{number}: {title[:80]}")
+
+            try:
+                add_labels(number, ["resolving"])
+            except PermissionError:
+                llm_log(f"  Cannot add label to #{number}")
+
+            analysis = self._analyze_issue(number, title, body, memory_context)
+            action = analysis.get("action")
+
+            if action == "fix":
+                entry = self._prepare_fix(number, title, analysis)
+                if entry:
+                    fixes.append(entry)
+                results.append(entry[2] if entry else ActionResult("resolve", "info", f"#{number}: skipped"))
+            elif action == "close":
+                comment = analysis.get("comment", "This issue appears to be resolved.")
+                try:
+                    create_comment(number, comment)
+                    update_issue(number, {"state": "closed"})
+                    llm_log(f"  #{number} — closed as resolved")
+                except PermissionError:
+                    llm_log(f"  Cannot close #{number}")
+                results.append(ActionResult("resolve", "info", f"Closed #{number}: {comment[:200]}"))
+            else:
+                llm_log(f"  #{number} — skipped (action={action})")
+
+        if fixes and self.config.outputs.batch_fix_prs:
+            self._apply_batch_fix_pr(fixes, results)
+        elif fixes:
+            for number, fix, _ in fixes:
+                self._apply_individual_fix_pr(number, fix, results)
+
+        llm_log(f"Resolve complete: {len(results)} issue(s) processed")
+        return results
+
+    def _analyze_issue(
+        self, number: int, title: str, body: str, memory_context: str,
+    ) -> dict:
+        from patchly.llm import chat
+
+        files = list_project_files()
+        file_list = "\n".join(
+            str(f.relative_to(WORKSPACE))
+            for f in files
+            if f.suffix in {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".rb", ".php", ".c", ".cpp", ".cs"}
+            and f.stat().st_size > 0
+        )[:8000]
+
+        prompt = (
+            f"Issue #{number}: {title}\n\n"
+            f"Description:\n{body[:4000]}\n\n"
+            f"Current project files:\n{file_list}\n\n"
+            "Analyze this issue and respond with a JSON object:\n"
+            '{"action": "fix"|"close"|"skip", "files": ["path1", "path2"], "description": "...", "comment": "..."}\n'
+            "- fix: issue still exists and should be fixed\n"
+            "- close: issue is already resolved or no longer relevant\n"
+            "- skip: unsure or needs human review\n"
+            '"files": list of files likely involved (for "fix" action)\n'
+            '"description": short technical description of the problem\n'
+            '"comment": what to post on the issue\n'
+            "Respond with ONLY valid JSON, no markdown."
+        )
+
+        system = self._build_system_prompt(memory_context)
+        result = chat([{"role": "user", "content": prompt}], self.config, system=system)
+
+        import json as _json
+        try:
+            return _json.loads(result)
+        except (_json.JSONDecodeError, Exception):
+            llm_log(f"  Could not parse LLM response for #{number}")
+            return {"action": "skip", "comment": "Could not analyze this issue automatically."}
+
+    def _prepare_fix(
+        self, number: int, title: str, analysis: dict,
+    ) -> tuple[int, ActionResult, ActionResult] | None:
+        from patchly.modes.fix import _generate_fix
+        from patchly.risk import classify, score_issue
+
+        files = analysis.get("files", [])
+        if not files:
+            llm_log(f"  #{number} — no files identified for fix")
+            return None
+
+        issue_result = ActionResult(
+            "resolve", "error", analysis.get("description", title), files=files,
+        )
+        risk_score = score_issue(issue_result)
+        level = classify(risk_score)
+
+        if level == "high":
+            llm_log(f"  #{number} — high risk, requires human review")
+            return None
+
+        fix = _generate_fix(issue_result, self.config)
+        if fix is None:
+            llm_log(f"  #{number} — fix not generated")
+            return None
+
+        result = ActionResult(
+            "resolve", "info", f"#{number}: fix generated for {files[0]}",
+        )
+        return (number, fix, result)
+
+    def _apply_individual_fix_pr(
+        self, number: int, fix: ActionResult, results: list[ActionResult],
+    ) -> None:
+        from patchly.github_client import create_comment
+        from patchly.modes.fix import _apply_fix_as_pr
+
+        issue_result = ActionResult("resolve", "info", fix.description)
+        pr_url = _apply_fix_as_pr(issue_result, fix, self.config)
+        if pr_url:
+            try:
+                create_comment(
+                    number,
+                    f"**Fix PR created:** {pr_url}\n\n"
+                    f"_This PR was automatically generated by Patchly._",
+                )
+            except PermissionError:
+                pass
+            llm_log(f"  #{number} — fix PR: {pr_url}")
+            results.append(ActionResult("resolve", "info", f"#{number}: fix PR {pr_url}"))
+        else:
+            results.append(ActionResult("resolve", "warning", f"#{number}: could not create PR"))
+
+    def _apply_batch_fix_pr(
+        self, fixes: list[tuple[int, ActionResult, ActionResult]], results: list[ActionResult],
+    ) -> None:
+        from patchly.github_client import create_comment, create_pr, get_branch_sha, get_default_branch
+        import base64, os, httpx
+        from patchly.github_client import API, HEADERS, GITHUB_REPOSITORY
+
+        if not fixes:
+            return
+
+        branch_name = f"patchly/batch-fix-{os.urandom(4).hex()}"
+        llm_log(f"  Creating batch branch {branch_name}...")
+
+        try:
+            main_sha = get_branch_sha(get_default_branch())
+        except Exception as e:
+            llm_log(f"  Cannot get main SHA: {e}")
+            return
+
+        ref_resp = httpx.post(
+            f"{API}/repos/{GITHUB_REPOSITORY}/git/refs",
+            headers=HEADERS,
+            json={"ref": f"refs/heads/{branch_name}", "sha": main_sha},
+            timeout=15,
+        )
+        if ref_resp.status_code not in (200, 201):
+            llm_log(f"  Branch creation failed: {ref_resp.status_code}")
+            return
+
+        changed_files = []
+        for number, fix, _ in fixes:
+            try:
+                fix_data = json.loads(fix.detail)
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+            file_path = fix_data.get("file", "")
+            new_content = fix_data.get("new_content", "")
+            if not file_path or not new_content:
+                continue
+
+            try:
+                info = httpx.get(
+                    f"{API}/repos/{GITHUB_REPOSITORY}/contents/{file_path}",
+                    headers=HEADERS, timeout=15,
+                )
+                current_sha = info.json().get("sha", "") if info.status_code == 200 else ""
+
+                put = httpx.put(
+                    f"{API}/repos/{GITHUB_REPOSITORY}/contents/{file_path}",
+                    headers=HEADERS,
+                    json={
+                        "message": f"patchly: fix #{number} - {Path(file_path).name}",
+                        "content": base64.b64encode(new_content.encode()).decode(),
+                        "sha": current_sha,
+                        "branch": branch_name,
+                    },
+                    timeout=15,
+                )
+                if put.status_code in (200, 201):
+                    changed_files.append(file_path)
+                    llm_log(f"  #{number} — {file_path} updated")
+            except Exception as e:
+                llm_log(f"  #{number} — file write error: {e}")
+
+        if not changed_files:
+            llm_log("  No files changed, skipping PR")
+            return
+
+        body_lines = [
+            "## Automated batch fix by Patchly\n",
+        ]
+        for number, fix, _ in fixes:
+            try:
+                fix_data = json.loads(fix.detail)
+                file_path = fix_data.get("file", "")
+                body_lines.append(f"- #{number}: fix in `{file_path}`")
+            except Exception:
+                body_lines.append(f"- #{number}")
+
+        try:
+            pr = create_pr(
+                title=f"Patchly: batch fix ({len(changed_files)} file(s))",
+                body="\n".join(body_lines),
+                head=branch_name,
+            )
+            pr_url = pr.get("html_url", "")
+        except PermissionError as e:
+            llm_log(f"  PR creation failed — insufficient permissions: {e}")
+            pr_url = ""
+        except Exception as e:
+            llm_log(f"  PR creation failed: {e}")
+            pr_url = ""
+
+        if pr_url:
+            for number, _, _ in fixes:
+                try:
+                    create_comment(
+                        number,
+                        f"**Batch fix PR:** {pr_url}\n\n"
+                        f"_This fix was included in a batch PR along with other changes._",
+                    )
+                except PermissionError:
+                    pass
+            llm_log(f"  Batch PR created: {pr_url}")
+            results.append(ActionResult("resolve", "info", f"Batch fix PR: {pr_url}"))
+        else:
+            llm_log("  PR creation failed")
 
     def _write_report(self, results: list[ActionResult]) -> None:
         # Security: sanitize before writing to file to prevent stored XSS in reports
