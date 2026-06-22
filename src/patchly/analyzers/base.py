@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 from patchly.actions import ActionResult
 from patchly.config import PatchlyConfig
@@ -30,7 +31,7 @@ class BaseAnalyzer(ABC):
         self.config = config
 
     @abstractmethod
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict[str, str] | None = None) -> list[ActionResult]:
         pass
 
     def _llm_analysis(self, system: str, files_content: str) -> str:
