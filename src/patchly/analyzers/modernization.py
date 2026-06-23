@@ -27,11 +27,15 @@ Output format:
 
 
 class ModernizationAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict | None = None) -> list[ActionResult]:
+        super().analyze(files, file_contents=file_contents)
         content_batches = []
         for f in files:
             try:
-                text = f.read_text(encoding="utf-8", errors="replace")
+                if file_contents is not None and f in file_contents:
+                    text = file_contents[f]
+                else:
+                    text = f.read_text(encoding="utf-8", errors="replace")
                 if text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:2000]}\n```")
             except Exception:
