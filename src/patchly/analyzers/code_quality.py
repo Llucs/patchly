@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 from pathlib import Path
 
@@ -25,11 +26,14 @@ Output format:
 
 
 class CodeQualityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: Optional[dict] = None) -> list[ActionResult]:
         content_batches = []
         for f in files:
             try:
-                text = f.read_text(encoding="utf-8", errors="replace")
+                if file_contents is not None and str(f) in file_contents:
+                    text = file_contents[str(f)]
+                else:
+                    text = f.read_text(encoding="utf-8", errors="replace")
                 if text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:3000]}\n```")
             except Exception:
