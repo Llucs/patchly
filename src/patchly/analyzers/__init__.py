@@ -38,7 +38,7 @@ def run_analyzers(files: list[Path], config: PatchlyConfig) -> list[ActionResult
             continue
         analyzer = cls(config)
         try:
-            batch = analyzer.analyze(files, file_contents=file_contents)
+            batch = analyzer.analyze(files, content=file_contents)
             results.extend(batch)
         except Exception as e:
             results.append(ActionResult(name, "error", f"Analyzer failed: {e}"))
