@@ -32,15 +32,30 @@ Output format:
 
 
 class SecurityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path] | None = None,
+        content: str | None = None,
+        file_contents: dict[Path, str] | None = None,
+    ) -> list[ActionResult]:
         content_batches = []
-        for f in files:
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace")
+        if content is not None:
+            if content.strip():
+                content_batches.append(f"### Provided Content\n```\n{content[:3000]}\n```")
+        elif file_contents is not None:
+            for f, text in file_contents.items():
                 if text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:3000]}\n```")
-            except Exception:
-                pass
+        elif files is not None:
+            for f in files:
+                try:
+                    text = f.read_text(encoding="utf-8", errors="replace")
+                    if text.strip():
+                        content_batches.append(f"### {f}\n```\n{text[:3000]}\n```")
+                except Exception:
+                    pass
+        else:
+            return []
 
         if not content_batches:
             return []
