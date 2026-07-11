@@ -27,7 +27,7 @@ Output format:
 
 
 class ModernizationAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict[Path, str] | None = None) -> list[ActionResult]:
         content_batches = []
         for f in files:
             try:
