@@ -32,12 +32,12 @@ Output format:
 
 
 class SecurityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict[str, str] | None = None) -> list[ActionResult]:
         content_batches = []
         for f in files:
             try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-                if text.strip():
+                text = file_contents.get(str(f)) if file_contents else f.read_text(encoding="utf-8", errors="replace")
+                if text and text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:3000]}\n```")
             except Exception:
                 pass
