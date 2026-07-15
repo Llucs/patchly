@@ -27,11 +27,15 @@ Output format:
 
 
 class ModernizationAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], **kwargs) -> list[ActionResult]:
         content_batches = []
+        file_contents = kwargs.get('file_contents')
         for f in files:
             try:
-                text = f.read_text(encoding="utf-8", errors="replace")
+                if file_contents and f in file_contents:
+                    text = file_contents[f]
+                else:
+                    text = f.read_text(encoding="utf-8", errors="replace")
                 if text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:2000]}\n```")
             except Exception:
