@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from patchly.actions import ActionResult
 from patchly.analyzers.base import BaseAnalyzer
@@ -25,7 +26,7 @@ Output format:
 
 
 class CodeQualityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: Optional[dict] = None) -> list[ActionResult]:
         content_batches = []
         for f in files:
             try:
