@@ -25,11 +25,14 @@ Output format:
 
 
 class CodeQualityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict[Path, str] | None = None) -> list[ActionResult]:
         content_batches = []
         for f in files:
             try:
-                text = f.read_text(encoding="utf-8", errors="replace")
+                if file_contents and f in file_contents:
+                    text = file_contents[f]
+                else:
+                    text = f.read_text(encoding="utf-8", errors="replace")
                 if text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:3000]}\n```")
             except Exception:
