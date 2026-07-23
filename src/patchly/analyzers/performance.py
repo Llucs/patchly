@@ -28,15 +28,21 @@ Output format:
 
 
 class PerformanceAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict[str, str] | None = None) -> list[ActionResult]:
         content_batches = []
-        for f in files:
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-                if text.strip():
-                    content_batches.append(f"### {f}\n```\n{text[:2000]}\n```")
-            except Exception:
-                pass
+        if file_contents is not None:
+            for file_path_str, content in file_contents.items():
+                file_path = Path(file_path_str)
+                if content.strip():
+                    content_batches.append(f"### {file_path}\n```\n{content[:2000]}\n```")
+        else:
+            for f in files:
+                try:
+                    text = f.read_text(encoding="utf-8", errors="replace")
+                    if text.strip():
+                        content_batches.append(f"### {f}\n```\n{text[:2000]}\n```")
+                except Exception:
+                    pass
 
         if not content_batches:
             return []
