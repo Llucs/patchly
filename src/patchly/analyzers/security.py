@@ -32,7 +32,10 @@ Output format:
 
 
 class SecurityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: str | None = None) -> list[ActionResult]:
+        if file_contents is not None:
+            return self._parse_findings(self._llm_analysis(SYSTEM, file_contents), "security")
+
         content_batches = []
         for f in files:
             try:
