@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Mapping
 
 from patchly.actions import ActionResult
 from patchly.analyzers.base import BaseAnalyzer
@@ -28,7 +29,7 @@ Output format:
 
 
 class ArchitectureAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: Mapping[Path, str] | None = None) -> list[ActionResult]:
         structure = []
         for f in files:
             structure.append(str(f.relative_to(Path.cwd())))
