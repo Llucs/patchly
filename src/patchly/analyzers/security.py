@@ -32,18 +32,16 @@ Output format:
 
 
 class SecurityAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
-        content_batches = []
-        for f in files:
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-                if text.strip():
-                    content_batches.append(f"### {f}\n```\n{text[:3000]}\n```")
-            except Exception:
-                pass
-
-        if not content_batches:
+    def analyze(
+        self,
+        file_contents: str,
+        file_path: Path | None = None,
+    ) -> list[ActionResult]:
+        if not file_contents or not file_contents.strip():
             return []
+
+        display_path = file_path or Path("<unknown>")
+        content_batches = [f"### {display_path}\n```\n{file_contents[:3000]}\n```"]
 
         result = self._llm_analysis(SYSTEM, "\n\n".join(content_batches))
         return self._parse_findings(result, "security")
