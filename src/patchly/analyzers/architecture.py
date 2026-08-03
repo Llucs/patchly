@@ -28,7 +28,7 @@ Output format:
 
 
 class ArchitectureAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: dict[str, str] | None = None, **kwargs) -> list[ActionResult]:
         structure = []
         for f in files:
             structure.append(str(f.relative_to(Path.cwd())))
