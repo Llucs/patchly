@@ -30,7 +30,12 @@ class BaseAnalyzer(ABC):
         self.config = config
 
     @abstractmethod
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path] | None = None,
+        file_contents: str | None = None,
+        **kwargs,
+    ) -> list[ActionResult]:
         pass
 
     def _llm_analysis(self, system: str, files_content: str) -> str:
