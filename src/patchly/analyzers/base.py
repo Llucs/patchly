@@ -29,6 +29,18 @@ class BaseAnalyzer(ABC):
     def __init__(self, config):
         self.config = config
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Wrap analyze to accept additional keyword arguments (e.g., file_contents)
+        if "analyze" in cls.__dict__:
+            original_analyze = cls.__dict__["analyze"]
+
+            def wrapped_analyze(self, files, *args, **kwargs):
+                # Ignore extra arguments like file_contents, only pass files to the subclass implementation
+                return original_analyze(self, files)
+
+            cls.analyze = wrapped_analyze
+
     @abstractmethod
     def analyze(self, files: list[Path]) -> list[ActionResult]:
         pass
