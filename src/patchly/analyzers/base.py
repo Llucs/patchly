@@ -30,8 +30,23 @@ class BaseAnalyzer(ABC):
         self.config = config
 
     @abstractmethod
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, files: list[Path], file_contents: str | None = None) -> list[ActionResult]:
+        """Analyze the given files. If file_contents is provided, it should be used instead of reading files from disk."""
         pass
+
+    def _load_contents(self, files: list[Path], file_contents: str | None = None) -> str:
+        """Return file_contents if provided, otherwise read files from disk into a single string."""
+        if file_contents is not None:
+            return file_contents
+
+        sections = []
+        for path in files:
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                content = f"# Error reading {path}: {e}"
+            sections.append(f"### {path}\n{content}")
+        return "\n\n".join(sections)
 
     def _llm_analysis(self, system: str, files_content: str) -> str:
         return chat(
