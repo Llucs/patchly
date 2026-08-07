@@ -28,10 +28,28 @@ Output format:
 
 
 class ArchitectureAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path],
+        file_contents: dict[Path, str] | None = None,
+    ) -> list[ActionResult]:
+        cwd = Path.cwd()
         structure = []
         for f in files:
-            structure.append(str(f.relative_to(Path.cwd())))
+            rel_path = f.relative_to(cwd)
+            content = None
+            if file_contents is not None:
+                content = file_contents.get(f)
+                if content is None:
+                    content = file_contents.get(str(f))
+                if content is None:
+                    content = file_contents.get(str(rel_path))
+            if content is None:
+                try:
+                    content = f.read_text()
+                except (OSError, UnicodeDecodeError):
+                    content = ""
+            structure.append(f"### {rel_path}\n{content}\n")
 
         if not structure:
             return []
