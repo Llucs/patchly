@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import inspect
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -26,11 +28,43 @@ ACTIONABLE_KEYWORDS = re.compile(
 
 
 class BaseAnalyzer(ABC):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        analyze = cls.__dict__.get("analyze")
+        if analyze is None:
+            return
+
+        try:
+            sig = inspect.signature(analyze)
+        except (TypeError, ValueError):
+            return
+
+        parameters = sig.parameters.values()
+        accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters)
+        if "file_contents" in sig.parameters or accepts_kwargs:
+            return
+
+        @functools.wraps(analyze)
+        def wrapper(self, files, *args, **kwargs):
+            kwargs.pop("file_contents", None)
+            return analyze(self, files, *args, **kwargs)
+
+        cls.analyze = wrapper
+
     def __init__(self, config):
         self.config = config
 
     @abstractmethod
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path],
+        file_contents: str | None = None,
+    ) -> list[ActionResult]:
+        """Analyze files using the current analyzer.
+
+        ``file_contents`` is an optional pre-read string containing the
+        contents of the files to analyze, supplied by the analyzer runner.
+        """
         pass
 
     def _llm_analysis(self, system: str, files_content: str) -> str:
