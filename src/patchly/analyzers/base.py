@@ -30,7 +30,11 @@ class BaseAnalyzer(ABC):
         self.config = config
 
     @abstractmethod
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path] | None = None,
+        file_contents: dict[str, str] | None = None,
+    ) -> list[ActionResult]:
         pass
 
     def _llm_analysis(self, system: str, files_content: str) -> str:
@@ -60,8 +64,8 @@ class BaseAnalyzer(ABC):
         results = []
         for f in findings:
             sev = self._detect_severity(f) or severity
-            files = self._extract_files(f)
-            results.append(ActionResult(analyzer_name, sev, f.strip(), files=files))
+            file_paths = self._extract_files(f)
+            results.append(ActionResult(analyzer_name, sev, f.strip(), files=file_paths))
         return results
 
     def _extract_files(self, text: str) -> list[str]:
