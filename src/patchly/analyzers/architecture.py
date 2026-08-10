@@ -28,16 +28,43 @@ Output format:
 
 
 class ArchitectureAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path],
+        file_contents: dict[Path | str, str] | None = None,
+        file_path: Path | None = None,
+    ) -> list[ActionResult]:
         structure = []
+        file_contents_to_analyze = []
+
         for f in files:
-            structure.append(str(f.relative_to(Path.cwd())))
+            relative = f.relative_to(Path.cwd())
+            structure.append(str(relative))
+
+            content = None
+            if file_contents is not None:
+                for key in (f, str(f), relative, str(relative)):
+                    content = file_contents.get(key)
+                    if content is not None:
+                        break
+
+            if content is None and f.is_file():
+                content = f.read_text(errors="replace")
+
+            if content is not None:
+                file_contents_to_analyze.append(f"--- {relative} ---\n{content}")
 
         if not structure:
             return []
 
-        result = self._llm_analysis(
-            SYSTEM,
-            f"Repository structure ({len(structure)} files):\n" + "\n".join(structure),
+        user_content = (
+            f"Repository structure ({len(structure)} files):\n"
+            + "\n".join(structure)
         )
+        if file_contents_to_analyze:
+            user_content += (
+                "\n\nFile contents:\n" + "\n\n".join(file_contents_to_analyze)
+            )
+
+        result = self._llm_analysis(SYSTEM, user_content)
         return self._parse_findings(result, "architecture")
