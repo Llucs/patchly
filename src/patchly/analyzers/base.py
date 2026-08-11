@@ -30,8 +30,14 @@ class BaseAnalyzer(ABC):
         self.config = config
 
     @abstractmethod
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(self, file_path: Path, file_contents: str | None = None) -> list[ActionResult]:
+        """Analyze a single file, using file_contents when provided."""
         pass
+
+    def _read_file(self, file_path: Path, file_contents: str | None = None) -> str:
+        if file_contents is None:
+            return file_path.read_text(encoding="utf-8")
+        return file_contents
 
     def _llm_analysis(self, system: str, files_content: str) -> str:
         return chat(
