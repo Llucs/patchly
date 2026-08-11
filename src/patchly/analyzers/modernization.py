@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from patchly.actions import ActionResult
 from patchly.analyzers.base import BaseAnalyzer
@@ -27,12 +28,25 @@ Output format:
 
 
 class ModernizationAnalyzer(BaseAnalyzer):
-    def analyze(self, files: list[Path]) -> list[ActionResult]:
+    def analyze(
+        self,
+        files: list[Path],
+        file_contents: dict[Path | str, str] | None = None,
+        **kwargs: Any,
+    ) -> list[ActionResult]:
         content_batches = []
         for f in files:
             try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-                if text.strip():
+                if file_contents is not None:
+                    text = file_contents.get(f)
+                    if text is None:
+                        text = file_contents.get(str(f))
+                    if text is None:
+                        text = f.read_text(encoding="utf-8", errors="replace")
+                else:
+                    text = f.read_text(encoding="utf-8", errors="replace")
+
+                if text and text.strip():
                     content_batches.append(f"### {f}\n```\n{text[:2000]}\n```")
             except Exception:
                 pass
